@@ -27,6 +27,8 @@ impl Default for Settings {
         );
         default_flags.insert("gemini".to_string(), "--yolo".to_string());
         default_flags.insert("qwen".to_string(), "--yolo".to_string());
+        // Codex can also require permissive flags in some environments
+        default_flags.insert("codex".to_string(), "--yolo".to_string());
 
         Self {
             auto_remove_minutes: Some(60),
@@ -67,4 +69,3 @@ pub fn load_settings() -> Result<Settings> {
     }
     Ok(Settings::default())
 }
-

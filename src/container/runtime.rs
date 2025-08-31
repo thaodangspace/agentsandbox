@@ -214,6 +214,10 @@ fn build_run_command(
         Agent::Gemini => {
             mount_agent_config(&mut docker_run, &["gemini"], current_dir, current_user);
         }
+        Agent::Codex => {
+            // Map Codex config directories (e.g., ~/.codex) into the container
+            mount_agent_config(&mut docker_run, &["codex"], current_dir, current_user);
+        }
         Agent::Qwen => {
             mount_agent_config(&mut docker_run, &["qwen"], current_dir, current_user);
         }
@@ -483,7 +487,7 @@ RUN npm install -g @openai/codex
 RUN npm install -g @qwen-code/qwen-code@latest
 
 # Install Cursor CLI
-RUN curl https://cursor.com/install -fsS | bash
+RUN curl https://cursor.com/install -fsS | bash 
 # Switch to user
 USER {user}
 WORKDIR /home/{user}
