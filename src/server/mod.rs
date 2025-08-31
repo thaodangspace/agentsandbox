@@ -397,25 +397,15 @@ async fn handle_terminal(
         docker_cmd.args(["-w", workdir]);
     }
     // Do not request a TTY from Docker here; allocate a PTY inside the
-    // container using `script` so it works from non-TTY servers. Run tmux so
-    // sessions survive browser reloads.
-    // Construct tmux start command. If an autorun command is present, run it
-    // via bash -lc '<cmd>; exec bash -l' so the user stays in an interactive shell.
-    let tmux_start = if let Some(ref cmd) = autorun {
+    // container using `script` so it works from non-TTY servers.
+    // If an autorun command is present, run it via bash -lc '<cmd>; exec bash -l'
+    // so the user stays in an interactive shell.
+    let shell_start = if let Some(ref cmd) = autorun {
         // Safely single-quote the command for the shell that processes script -c
         let escaped = cmd.replace('\'', "'\\''");
-        // Configure tmux for better web terminal compatibility before creating/attaching session:
-        // - force 256-color (-2)
-        // - use a 256-color default terminal within tmux
-        // - enable RGB truecolor passthrough for xterm-256color
-        // - enable aggressive-resize and mouse support
-        // - create/attach to session and run the user's autorun, leaving an interactive shell
-        format!(
-            "tmux -2 start-server \\; set -g default-terminal screen-256color \\; set -ga terminal-overrides ',xterm-256color:RGB,screen-256color:RGB,tmux-256color:RGB' \\; setw -g aggressive-resize on \\; set -g mouse on \\; new-session -A -s codesandbox bash -lc '{}; exec bash -l'",
-            escaped
-        )
+        format!("bash -lc '{}; exec bash -l'", escaped)
     } else {
-        "tmux -2 start-server \\; set -g default-terminal screen-256color \\; set -ga terminal-overrides ',xterm-256color:RGB,screen-256color:RGB,tmux-256color:RGB' \\; setw -g aggressive-resize on \\; set -g mouse on \\; new-session -A -s codesandbox bash -l".to_string()
+        "bash -l".to_string()
     };
 
     docker_cmd.args([
@@ -426,7 +416,7 @@ async fn handle_terminal(
         "-q",
         "-f",
         "-c",
-        &tmux_start,
+        &shell_start,
         "-",
     ]);
 
@@ -452,13 +442,11 @@ async fn handle_terminal(
     let (sender, mut receiver) = socket.split();
     let sender = Arc::new(Mutex::new(sender));
 
-    // If we embedded the autorun into tmux startup, no need to inject via stdin here.
+    // If we embedded the autorun into shell startup, no need to inject via stdin here.
     // Keep stdin injection only when no autorun was provided (compat for /terminal?run=...).
     if autorun.is_none() {
         if let Some(cmd_plain) = run {
-            let _ = stdin
-                .write_all(format!("{}\n", cmd_plain).as_bytes())
-                .await;
+            let _ = stdin.write_all(format!("{}\n", cmd_plain).as_bytes()).await;
             let _ = stdin.flush().await;
         }
     }
@@ -513,34 +501,6 @@ async fn handle_terminal(
     while let Some(Ok(msg)) = receiver.next().await {
         match msg {
             Message::Text(t) => {
-                // Intercept client-side resize control messages
-                if let Some(rest) = t.strip_prefix("__RESIZE__:") {
-                    let mut parts = rest.split(',');
-                    if let (Some(c), Some(r)) = (parts.next(), parts.next()) {
-                        if let (Ok(cols), Ok(rows)) = (c.parse::<u16>(), r.parse::<u16>()) {
-                            // Resize the active tmux window in the target container
-                            let container_clone = container.clone();
-                            tokio::spawn(async move {
-                                let _ = Command::new("docker")
-                                    .args([
-                                        "exec",
-                                        &container_clone,
-                                        "tmux",
-                                        "resize-window",
-                                        "-t",
-                                        "codesandbox",
-                                        "-x",
-                                        &cols.to_string(),
-                                        "-y",
-                                        &rows.to_string(),
-                                    ])
-                                    .status()
-                                    .await;
-                            });
-                            continue;
-                        }
-                    }
-                }
                 if stdin.write_all(t.as_bytes()).await.is_err() {
                     break;
                 }

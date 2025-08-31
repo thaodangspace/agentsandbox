@@ -457,7 +457,6 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     gnupg \
     lsb-release \
-    tmux \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js v22
