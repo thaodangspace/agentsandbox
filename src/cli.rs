@@ -9,16 +9,8 @@ pub struct Cli {
     #[arg(
         long,
         help = "Resume the last created container",
-        conflicts_with = "cleanup"
     )]
     pub continue_: bool,
-
-    #[arg(
-        long,
-        help = "Remove all containers created from this directory",
-        conflicts_with = "continue_"
-    )]
-    pub cleanup: bool,
 
     #[arg(
         long = "add_dir",
@@ -72,6 +64,8 @@ pub enum Commands {
         #[arg(short = 'd', long = "daemon", help = "Run server in the background")]
         daemon: bool,
     },
+    #[command(about = "Remove all containers created from this directory")]
+    Cleanup,
 }
 
 #[derive(ValueEnum, Clone, Debug)]

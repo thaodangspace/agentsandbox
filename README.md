@@ -5,7 +5,7 @@
 [![Rust Version](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://www.docker.com)
 
-A robust Rust CLI tool that creates isolated Ubuntu Docker containers with development agents pre-installed. Code Sandbox provides a secure, disposable environment for running AI assistants like Claude, Gemini, Codex, and Qwen, ensuring their actions are confined to the container while maintaining a clean, reproducible workspace.
+A robust Rust CLI tool that creates isolated Ubuntu Docker containers with development agents pre-installed. Code Sandbox provides a secure, disposable environment for running AI assistants like Claude, Gemini, Codex, Qwen, and Cursor, ensuring their actions are confined to the container while maintaining a clean, reproducible workspace.
 
 ## Table of Contents
 
@@ -25,14 +25,17 @@ A robust Rust CLI tool that creates isolated Ubuntu Docker containers with devel
 
 ### Why Sandbox an AI Agent?
 
-Running an agent inside an isolated container provides several benefits:
+Running an AI agent with direct access to your host machine is risky. An agent could inadvertently or maliciously:
 
--   Protects your host machine by keeping the agent's file system changes and
-    processes separate from your environment
--   Ensures a clean, reproducible workspace with all dependencies installed
-    from scratch
--   Makes it easy to experiment with untrusted code or dependencies and then
-    discard the container when finished
+-   Install dangerous packages (`npm install some-malware`)
+-   Execute destructive commands (`rm -rf /`, `pkill`)
+-   Run sensitive operations (`git push --force`, `db:migrate`)
+
+Using an isolated container provides critical benefits:
+
+-   **Security**: Protects your host machine by keeping the agent's file system changes and processes separate from your environment.
+-   **Integrity**: Ensures a clean, reproducible workspace with all dependencies installed from scratch.
+-   **Flexibility**: Makes it easy to experiment with untrusted code or dependencies and then discard the container when finished.
 
 ## Demo
 
@@ -42,9 +45,9 @@ Running an agent inside an isolated container provides several benefits:
 
 ### Core Functionality
 
--   **Multi-Agent Support**: Compatible with Claude, Gemini, Codex, and Qwen development agents
+-   **Multi-Agent Support**: Compatible with Claude, Gemini, Codex, Qwen, and Cursor development agents
 -   **Automatic Workspace Mounting**: Seamlessly mounts your current directory to same path with the host machine in the container
--   **Node Modules Isolation**: For Node.js projects, `node_modules` is overlaid with a container-only volume and dependencies are installed inside the container to avoid affecting the host
+-   **Node Modules Isolation**: For Node.js projects, `node_modules` is overlaid with a container-only volume. Existing host `node_modules` are copied to the container on first run to accelerate setup.
 -   **Configuration Management**: Automatically copies and applies your agent configurations
 -   **Intelligent Naming**: Generates contextual container names to prevent conflicts (`csb-{agent}-{dir}-{branch}-{yymmddhhmm}`)
 -   **Language Tooling**: Detects common project languages and installs missing package managers like Cargo, npm, pip, Composer, Go, or Bundler
@@ -52,6 +55,7 @@ Running an agent inside an isolated container provides several benefits:
 ### Workflow Management
 
 -   **Session Continuity**: Resume your last container session with `codesandbox --continue`
+-   **Global Container Listing**: List all running sandbox containers across all projects with `codesandbox ps`
 -   **Git Integration**: Create and use git worktrees for isolated branch development
 -   **Cleanup Utilities**: Efficient container management and cleanup tools
 -   **Directory Mounting**: Add additional read-only directories for extended workspace access
@@ -145,6 +149,9 @@ codesandbox --agent qwen
 
 # Use Gemini
 codesandbox --agent gemini
+
+# Use Cursor
+codesandbox --agent cursor
 ```
 
 #### Mount Additional Directories
@@ -160,8 +167,11 @@ codesandbox --add_dir /path/to/reference/repo
 # Resume the last container from this directory
 codesandbox --continue
 
-# List all containers and optionally attach
+# List containers for the current directory and optionally attach
 codesandbox ls
+
+# List all running containers across all projects
+codesandbox ps
 ```
 
 #### Git Workflow Integration
@@ -187,7 +197,7 @@ Set it as the default via `~/.config/codesandbox/settings.json`:
 }
 ```
 
-When web mode is enabled, codesandbox will start the local server if needed, open `http://<host>:6789` (default `localhost`, configurable via `web_host` in settings), and auto-run your selected agent in the browser terminal.
+When web mode is enabled, codesandbox will start the local server if needed, open `http://<host>:6789` (default `localhost`, configurable via `web_host` in settings), and automatically run your selected agent in the browser terminal.
 
 ## Connecting to the Container
 
@@ -201,13 +211,19 @@ The container name will be displayed when `codesandbox` runs.
 
 ## Listing Existing Containers
 
-List all sandbox containers created from the current directory and optionally attach to one:
+List all sandbox containers created from the **current directory** and optionally attach to one:
 
 ```bash
 codesandbox ls
 ```
 
-You will be shown a numbered list of containers. Enter a number to attach or press Enter to cancel.
+To list all running sandbox containers across all directories, use:
+
+```bash
+codesandbox ps
+```
+
+This view also allows you to `cd` directly into the project directory associated with a container.
 
 ## API
 
@@ -268,13 +284,20 @@ Additional behavior can be configured via `settings.json` located at
 
 ```json
 {
-    "auto_remove_minutes": 30,
+    "auto_remove_minutes": 60,
     "skip_permission_flags": {
         "claude": "--dangerously-skip-permissions",
         "gemini": "--yolo",
-        "qwen": "--yolo"
+        "qwen": "--yolo",
+        "cursor": "--yolo"
     },
-    "env_files": [".env", ".env.local"],
+    "env_files": [
+        ".env",
+        ".env.local",
+        ".env.development.local",
+        ".env.test.local",
+        ".env.production.local"
+    ],
     "web": true,
     "web_host": "my.devbox.local"
 }
@@ -301,7 +324,7 @@ codesandbox --shell
 To remove all containers created from the current directory:
 
 ```bash
-codesandbox --cleanup
+codesandbox cleanup
 ```
 
 To remove the built image:

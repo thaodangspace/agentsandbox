@@ -97,7 +97,7 @@ async fn main() -> Result<()> {
     // Determine whether to use web flow
     let use_web = cli.web || settings.web.unwrap_or(false);
 
-    if cli.cleanup {
+    if let Some(Commands::Cleanup) = cli.command.as_ref() {
         cleanup_containers(&current_dir)?;
         clear_last_container()?;
         println!(

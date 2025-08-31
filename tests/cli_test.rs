@@ -9,16 +9,13 @@ use cli::{Agent, Cli, Commands};
 fn parse_continue_flag() {
     let cli = Cli::parse_from(["codesandbox", "--continue"]);
     assert!(cli.continue_);
-    assert!(!cli.cleanup);
     assert!(cli.add_dir.is_none());
 }
 
 #[test]
-fn parse_cleanup_flag() {
-    let cli = Cli::parse_from(["codesandbox", "--cleanup"]);
-    assert!(cli.cleanup);
-    assert!(!cli.continue_);
-    assert!(cli.add_dir.is_none());
+fn parse_cleanup_subcommand() {
+    let cli = Cli::parse_from(["codesandbox", "cleanup"]);
+    assert!(matches!(cli.command, Some(Commands::Cleanup)));
 }
 
 #[test]
@@ -77,9 +74,11 @@ fn parse_restart_daemon_flag() {
 }
 
 #[test]
-fn conflicting_flags_error() {
-    let result = Cli::try_parse_from(["codesandbox", "--continue", "--cleanup"]);
-    assert!(result.is_err());
+fn continue_with_cleanup_subcommand_parses() {
+    // We allow specifying --continue with a subcommand; the caller can decide semantics
+    let cli = Cli::parse_from(["codesandbox", "--continue", "cleanup"]);
+    assert!(cli.continue_);
+    assert!(matches!(cli.command, Some(Commands::Cleanup)));
 }
 
 #[test]
