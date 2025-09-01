@@ -190,24 +190,18 @@ fn build_run_command(
         }
     }
 
-    let serena_paths = [
-        current_dir.join(".serena"),
-        home::home_dir().unwrap_or_default().join(".serena"),
-    ];
-    for serena_path in serena_paths.iter() {
-        if serena_path.exists() {
-            let container_serena_path = format!("/home/{}/.serena", current_user);
-            docker_run.args([
-                "-v",
-                &format!("{}:{}", serena_path.display(), container_serena_path),
-            ]);
-            println!(
-                "Mounting Serena MCP config from: {} -> {}",
-                serena_path.display(),
-                container_serena_path
-            );
-            break;
-        }
+    let serena_path = current_dir.join(".serena");
+    if serena_path.exists() {
+        let container_serena_path = format!("/home/{}/.serena", current_user);
+        docker_run.args([
+            "-v",
+            &format!("{}:{}", serena_path.display(), container_serena_path),
+        ]);
+        println!(
+            "Mounting Serena MCP config from: {} -> {}",
+            serena_path.display(),
+            container_serena_path
+        );
     }
 
     match agent {
