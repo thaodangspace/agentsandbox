@@ -14,13 +14,10 @@ mod state;
 mod worktree;
 
 use anyhow::{Context, Result};
-use base64::Engine as _;
 use std::env;
 use std::fs;
 use std::io::{self, Write};
-use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::Duration;
 
 use cli::{Cli, Commands};
 use container::{
@@ -84,7 +81,6 @@ async fn main() -> Result<()> {
             .with_context(|| format!("Failed to create worktree for branch {}", branch))?;
     }
     let settings = load_settings().unwrap_or_default();
-    let web_host = settings.web_host.as_deref().unwrap_or("localhost");
 
     check_docker_availability()?;
     auto_remove_old_containers(settings.auto_remove_minutes.unwrap_or(60))?;
@@ -93,9 +89,6 @@ async fn main() -> Result<()> {
         .iter()
         .find(|(agent, _)| agent.eq_ignore_ascii_case(cli.agent.command()))
         .map(|(_, flag)| flag.to_string());
-
-    // Determine whether to use web flow
-    let use_web = cli.web || settings.web.unwrap_or(false);
 
     if let Some(Commands::Cleanup) = cli.command.as_ref() {
         cleanup_containers(&current_dir)?;
@@ -116,20 +109,9 @@ async fn main() -> Result<()> {
                     true,
                     skip_permission_flag.as_deref(),
                     cli.shell,
-                    !use_web,
+                    true,
                 )
                 .await?;
-                if use_web {
-                    maybe_open_web(
-                        &container_name,
-                        &cli.agent,
-                        &current_dir,
-                        true,
-                        skip_permission_flag.as_deref(),
-                        web_host,
-                    )
-                    .await?;
-                }
                 return Ok(());
             }
             None => {
@@ -193,20 +175,9 @@ async fn main() -> Result<()> {
                         false,
                         skip_permission_flag.as_deref(),
                         cli.shell,
-                        !use_web,
+                        true,
                     )
                     .await?;
-                    if use_web {
-                        maybe_open_web(
-                            name,
-                            &cli.agent,
-                            &current_dir,
-                            false,
-                            skip_permission_flag.as_deref(),
-                            web_host,
-                        )
-                        .await?;
-                    }
                 } else {
                     println!("Path not available for selected container");
                 }
@@ -258,20 +229,9 @@ async fn main() -> Result<()> {
                     false,
                     skip_permission_flag.as_deref(),
                     cli.shell,
-                    !use_web,
+                    true,
                 )
                 .await?;
-                if use_web {
-                    maybe_open_web(
-                        selected,
-                        &cli.agent,
-                        &current_dir,
-                        false,
-                        skip_permission_flag.as_deref(),
-                        web_host,
-                    )
-                    .await?;
-                }
             }
             _ => println!("Invalid selection"),
         }
@@ -288,20 +248,9 @@ async fn main() -> Result<()> {
                 false,
                 skip_permission_flag.as_deref(),
                 cli.shell,
-                !use_web,
+                true,
             )
             .await?;
-            if use_web {
-                maybe_open_web(
-                    latest,
-                    &cli.agent,
-                    &current_dir,
-                    false,
-                    skip_permission_flag.as_deref(),
-                    web_host,
-                )
-                .await?;
-            }
             return Ok(());
         }
     }
@@ -316,16 +265,11 @@ async fn main() -> Result<()> {
 
     let container_name = generate_container_name(&current_dir, &cli.agent);
 
-    let token = container_name.clone();
     println!(
         "Starting {} Code Sandbox container: {container_name}",
         cli.agent
     );
     println!("Container {container_name} started successfully!");
-    println!(
-        "Access the terminal at: http://{}:6789/container/{container_name}?token={token}",
-        web_host
-    );
     println!(
         "To attach to the container manually, run: docker exec -it {container_name} /bin/bash"
     );
@@ -337,103 +281,10 @@ async fn main() -> Result<()> {
         &cli.agent,
         skip_permission_flag.as_deref(),
         cli.shell,
-        !use_web,
+        true,
     )
     .await?;
     save_last_container(&container_name)?;
 
-    
-    if use_web {
-        maybe_open_web(
-            &container_name,
-            &cli.agent,
-            &current_dir,
-            false,
-            skip_permission_flag.as_deref(),
-            web_host,
-        )
-        .await?;
-    }
-
-    Ok(())
-}
-
-fn build_agent_command_for_web(
-    current_dir: &Path,
-    agent: &cli::Agent,
-    agent_continue: bool,
-    skip_permission_flag: Option<&str>,
-) -> String {
-    // Safely quote project path for bash -c
-    let path_str = current_dir.display().to_string();
-    let escaped = path_str.replace('\'', "'\\''");
-    let mut command = format!(
-        "cd '{}' && export PATH=\"$HOME/.local/bin:$PATH\" && {}",
-        escaped,
-        agent.command()
-    );
-    if agent_continue {
-        command.push_str(" --continue");
-    }
-    if let Some(flag) = skip_permission_flag {
-        command.push(' ');
-        command.push_str(flag);
-    }
-    command
-}
-
-async fn ensure_server_running() -> Result<()> {
-    // Try to contact the server briefly; if unavailable, spawn it in the background
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(300))
-        .build()?;
-    let reachable = client.get("http://127.0.0.1:6789/").send().await.is_ok();
-    if !reachable {
-        let exe = env::current_exe()?;
-        let _child = Command::new(exe)
-            .arg("serve")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .stdin(Stdio::null())
-            .spawn()
-            .context("failed to start server in background")?;
-        // Give it a moment to bind
-        tokio::time::sleep(Duration::from_millis(300)).await;
-    }
-    Ok(())
-}
-
-async fn maybe_open_web(
-    container_name: &str,
-    agent: &cli::Agent,
-    current_dir: &Path,
-    agent_continue: bool,
-    skip_permission_flag: Option<&str>,
-    web_host: &str,
-) -> Result<()> {
-    ensure_server_running().await?;
-
-    let token = container_name;
-    let cmd = build_agent_command_for_web(current_dir, agent, agent_continue, skip_permission_flag);
-    let run_b64 = base64::engine::general_purpose::STANDARD.encode(cmd.as_bytes());
-    // Also pass the desired working directory so the shell starts in project root
-    let cwd_b64 = base64::engine::general_purpose::STANDARD
-        .encode(current_dir.display().to_string().as_bytes());
-    let url = format!(
-        "http://{}:6789/container/{}?token={}&run_b64={}&cwd_b64={}",
-        web_host, container_name, token, run_b64, cwd_b64
-    );
-
-    // Try to open the system browser
-    let opener = if cfg!(target_os = "macos") {
-        ("open", vec![url.as_str()])
-    } else if cfg!(target_os = "windows") {
-        ("cmd", vec!["/C", "start", url.as_str()])
-    } else {
-        ("xdg-open", vec![url.as_str()])
-    };
-
-    let _ = Command::new(opener.0).args(opener.1).spawn();
-    println!("Opened web UI: {}", url);
     Ok(())
 }

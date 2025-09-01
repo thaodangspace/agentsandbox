@@ -1,9 +1,0 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* Ensure the app uses dynamic viewport height on mobile */
-html, body, #root {
-  height: 100vh;
-  height: 100dvh; /* Prefer dvh where supported to handle mobile UI chrome */
-}

@@ -181,24 +181,6 @@ codesandbox ps
 codesandbox --worktree feature-branch
 ```
 
-### Web UI Mode
-
-To open the browser-based terminal instead of attaching in your CLI:
-
-```bash
-codesandbox --web
-```
-
-Set it as the default via `~/.config/codesandbox/settings.json`:
-
-```json
-{
-  "web": true
-}
-```
-
-When web mode is enabled, codesandbox will start the local server if needed, open `http://<host>:6789` (default `localhost`, configurable via `web_host` in settings), and automatically run your selected agent in the browser terminal.
-
 ## Connecting to the Container
 
 After the container is created, you can connect to it using:
@@ -297,9 +279,7 @@ Additional behavior can be configured via `settings.json` located at
         ".env.development.local",
         ".env.test.local",
         ".env.production.local"
-    ],
-    "web": true,
-    "web_host": "my.devbox.local"
+    ]
 }
 ```
 

@@ -6,10 +6,7 @@ use std::path::PathBuf;
 #[command(about = "Code Sandbox - Docker container manager")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
-    #[arg(
-        long,
-        help = "Resume the last created container",
-    )]
+    #[arg(long, help = "Resume the last created container")]
     pub continue_: bool,
 
     #[arg(
@@ -28,9 +25,6 @@ pub struct Cli {
 
     #[arg(long, help = "Attach to container shell without starting the agent")]
     pub shell: bool,
-
-    #[arg(long, help = "Open web UI instead of attaching in terminal")]
-    pub web: bool,
 
     #[arg(
         long,

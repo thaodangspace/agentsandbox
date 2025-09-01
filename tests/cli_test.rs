@@ -109,12 +109,6 @@ fn parse_shell_flag() {
 }
 
 #[test]
-fn parse_web_flag() {
-    let cli = Cli::parse_from(["codesandbox", "--web"]);
-    assert!(cli.web);
-}
-
-#[test]
 fn parse_worktree_option() {
     let cli = Cli::parse_from(["codesandbox", "--worktree", "feature"]);
     assert_eq!(cli.worktree.as_deref(), Some("feature"));
