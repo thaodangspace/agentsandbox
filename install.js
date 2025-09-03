@@ -7,7 +7,7 @@ const targetDir = path.join(__dirname, 'dist');
 fs.mkdirSync(targetDir, { recursive: true });
 
 const isWin = os.platform() === 'win32';
-const binName = isWin ? 'codesandbox.exe' : 'codesandbox';
+const binName = isWin ? 'agentsandbox.exe' : 'agentsandbox';
 
 try {
   execSync('cargo build --release', { stdio: 'inherit' });
@@ -16,6 +16,6 @@ try {
   fs.copyFileSync(src, dest);
   fs.chmodSync(dest, 0o755);
 } catch (err) {
-  console.error('Failed to build codesandbox binary', err);
+  console.error('Failed to build agentsandbox binary', err);
   process.exit(1);
 }

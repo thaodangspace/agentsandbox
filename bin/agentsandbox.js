@@ -4,7 +4,7 @@ const path = require('path');
 const os = require('os');
 
 const isWin = os.platform() === 'win32';
-const binName = isWin ? 'codesandbox.exe' : 'codesandbox';
+const binName = isWin ? 'agentsandbox.exe' : 'agentsandbox';
 const binPath = path.join(__dirname, '..', 'dist', binName);
 
 const args = process.argv.slice(2);

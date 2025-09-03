@@ -18,6 +18,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "agentsandbox"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atty",
+ "axum",
+ "base64",
+ "chrono",
+ "clap",
+ "futures",
+ "home",
+ "once_cell",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tower-http",
+]
+
+[[package]]
 name = "android-tzdata"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -296,28 +318,6 @@ name = "clap_lex"
 version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b94f61472cee1439c0b966b47e3aca9ae07e45d070759512cd390ea2bebc6675"
-
-[[package]]
-name = "codesandbox"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "atty",
- "axum",
- "base64",
- "chrono",
- "clap",
- "futures",
- "home",
- "once_cell",
- "reqwest",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tower",
- "tower-http",
-]
 
 [[package]]
 name = "colorchoice"

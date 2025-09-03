@@ -1,9 +1,9 @@
 {
-  "name": "@thaodangspace/code-sandbox",
+  "name": "@thaodangspace/agent-sandbox",
   "version": "0.1.0",
-  "description": "Code Sandbox CLI packaged for npm",
+  "description": "Agent Sandbox CLI packaged for npm",
   "bin": {
-    "codesandbox": "./bin/codesandbox.js"
+    "agentsandbox": "./bin/agentsandbox.js"
   },
   "files": [
     "bin",
@@ -16,7 +16,7 @@
   },
   "keywords": [
     "cli",
-    "codesandbox",
+    "agentsandbox",
     "rust",
     "docker"
   ],

@@ -51,12 +51,12 @@ fn default_env_files() -> Vec<String> {
 }
 
 fn settings_file_path() -> PathBuf {
-    if let Ok(dir) = env::var("CODESANDBOX_CONFIG_HOME") {
+    if let Ok(dir) = env::var("AGENTSANDBOX_CONFIG_HOME") {
         return PathBuf::from(dir).join("settings.json");
     }
     let home = home::home_dir().unwrap_or_else(|| PathBuf::from("/"));
     home.join(".config")
-        .join("codesandbox")
+        .join("agentsandbox")
         .join("settings.json")
 }
 

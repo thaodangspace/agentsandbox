@@ -1,11 +1,11 @@
-# Code Sandbox
+# Agent Sandbox
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/your-repo/code-sandbox)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust Version](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://www.docker.com)
 
-A robust Rust CLI tool that creates isolated Ubuntu Docker containers with development agents pre-installed. Code Sandbox provides a secure, disposable environment for running AI assistants like Claude, Gemini, Codex, Qwen, and Cursor, ensuring their actions are confined to the container while maintaining a clean, reproducible workspace.
+A robust Rust CLI tool that creates isolated Ubuntu Docker containers with development agents pre-installed. Agent Sandbox provides a secure, disposable environment for running AI assistants like Claude, Gemini, Codex, Qwen, and Cursor, ensuring their actions are confined to the container while maintaining a clean, reproducible workspace.
 
 ## Table of Contents
 
@@ -54,8 +54,8 @@ Using an isolated container provides critical benefits:
 
 ### Workflow Management
 
--   **Session Continuity**: Resume your last container session with `codesandbox --continue`
--   **Global Container Listing**: List all running sandbox containers across all projects with `codesandbox ps`
+-   **Session Continuity**: Resume your last container session with `agentsandbox --continue`
+-   **Global Container Listing**: List all running sandbox containers across all projects with `agentsandbox ps`
 -   **Git Integration**: Create and use git worktrees for isolated branch development
 -   **Cleanup Utilities**: Efficient container management and cleanup tools
 -   **Directory Mounting**: Add additional read-only directories for extended workspace access
@@ -80,10 +80,10 @@ Using an isolated container provides critical benefits:
 
 ```bash
 # Add the tap (replace with actual repository URL)
-brew tap your-username/codesandbox
+brew tap your-username/agentsandbox
 
-# Install codesandbox
-brew install codesandbox
+# Install agentsandbox
+brew install agentsandbox
 ```
 
 ### Method 2: Build from Source
@@ -97,7 +97,7 @@ cd code-sandbox
 cargo build --release
 
 # Install globally (optional)
-sudo cp target/release/codesandbox /usr/local/bin/
+sudo cp target/release/agentsandbox /usr/local/bin/
 ```
 
 ### Method 3: Install via Cargo
@@ -107,7 +107,7 @@ sudo cp target/release/codesandbox /usr/local/bin/
 cargo install --path .
 
 # Or install from crates.io (when published)
-cargo install codesandbox
+cargo install agentsandbox
 ```
 
 ### Method 4: Download Pre-built Binaries
@@ -117,10 +117,10 @@ Visit the [Releases](https://github.com/your-org/code-sandbox/releases) page to 
 ### Method 5: Install via npm
 
 ```bash
-npm install -g @thaodangspace/code-sandbox
+npm install -g @thaodangspace/agent-sandbox
 ```
 
-This compiles the CLI using Rust and exposes a `codesandbox` command via npm.
+This compiles the CLI using Rust and exposes a `agentsandbox` command via npm.
 
 ## Usage
 
@@ -129,7 +129,7 @@ This compiles the CLI using Rust and exposes a `codesandbox` command via npm.
 Navigate to your project directory and run:
 
 ```bash
-codesandbox
+agentsandbox
 ```
 
 This command will:
@@ -145,40 +145,40 @@ This command will:
 
 ```bash
 # Use Qwen instead of Claude
-codesandbox --agent qwen
+agentsandbox --agent qwen
 
 # Use Gemini
-codesandbox --agent gemini
+agentsandbox --agent gemini
 
 # Use Cursor
-codesandbox --agent cursor
+agentsandbox --agent cursor
 ```
 
 #### Mount Additional Directories
 
 ```bash
 # Add a read-only reference directory
-codesandbox --add_dir /path/to/reference/repo
+agentsandbox --add_dir /path/to/reference/repo
 ```
 
 #### Session Management
 
 ```bash
 # Resume the last container from this directory
-codesandbox --continue
+agentsandbox --continue
 
 # List containers for the current directory and optionally attach
-codesandbox ls
+agentsandbox ls
 
 # List all running containers across all projects
-codesandbox ps
+agentsandbox ps
 ```
 
 #### Git Workflow Integration
 
 ```bash
 # Create and use a git worktree for isolated branch work
-codesandbox --worktree feature-branch
+agentsandbox --worktree feature-branch
 ```
 
 ### Web UI Mode
@@ -186,10 +186,10 @@ codesandbox --worktree feature-branch
 To open the browser-based terminal instead of attaching in your CLI:
 
 ```bash
-codesandbox --web
+agentsandbox --web
 ```
 
-Set it as the default via `~/.config/codesandbox/settings.json`:
+Set it as the default via `~/.config/agentsandbox/settings.json`:
 
 ```json
 {
@@ -197,7 +197,7 @@ Set it as the default via `~/.config/codesandbox/settings.json`:
 }
 ```
 
-When web mode is enabled, codesandbox will start the local server if needed, open `http://<host>:6789` (default `localhost`, configurable via `web_host` in settings), and automatically run your selected agent in the browser terminal.
+When web mode is enabled, agentsandbox will start the local server if needed, open `http://<host>:6789` (default `localhost`, configurable via `web_host` in settings), and automatically run your selected agent in the browser terminal.
 
 ## Connecting to the Container
 
@@ -207,20 +207,20 @@ After the container is created, you can connect to it using:
 docker exec -it <container-name> /bin/bash
 ```
 
-The container name will be displayed when `codesandbox` runs.
+The container name will be displayed when `agentsandbox` runs.
 
 ## Listing Existing Containers
 
 List all sandbox containers created from the **current directory** and optionally attach to one:
 
 ```bash
-codesandbox ls
+agentsandbox ls
 ```
 
 To list all running sandbox containers across all directories, use:
 
 ```bash
-codesandbox ps
+agentsandbox ps
 ```
 
 This view also allows you to `cd` directly into the project directory associated with a container.
@@ -234,26 +234,26 @@ This repository includes an optional HTTP server that reports file changes insid
 Start the server:
 
 ```bash
-codesandbox serve
+agentsandbox serve
 ```
 
 Run it as a background daemon:
 
 ```bash
-codesandbox serve -d
+agentsandbox serve -d
 ```
 
 Stop the server:
 
 ```bash
-codesandbox stop
+agentsandbox stop
 ```
 
 Restart the server (optionally in the background):
 
 ```bash
-codesandbox restart
-codesandbox restart -d
+agentsandbox restart
+agentsandbox restart -d
 ```
 
 The server listens on port 6789. Query the changes for a specific container:
@@ -280,7 +280,7 @@ The tool automatically detects and mounts your Claude configuration from:
 -   `$XDG_CONFIG_HOME/claude` (XDG standard)
 
 Additional behavior can be configured via `settings.json` located at
-`~/.config/codesandbox/settings.json`. Example:
+`~/.config/agentsandbox/settings.json`. Example:
 
 ```json
 {
@@ -316,7 +316,7 @@ keeping sensitive data on the host.
 To start a container without launching an agent and open a shell:
 
 ```bash
-codesandbox --shell
+agentsandbox --shell
 ```
 
 ## Cleanup
@@ -324,13 +324,13 @@ codesandbox --shell
 To remove all containers created from the current directory:
 
 ```bash
-codesandbox cleanup
+agentsandbox cleanup
 ```
 
 To remove the built image:
 
 ```bash
-docker rmi codesandbox-image
+docker rmi agentsandbox-image
 ```
 
 ## Troubleshooting
@@ -341,7 +341,7 @@ docker rmi codesandbox-image
 
 ## Contributing
 
-We welcome contributions to Code Sandbox! Here's how you can help:
+We welcome contributions to Agent Sandbox! Here's how you can help:
 
 ### Getting Started
 
@@ -421,7 +421,7 @@ For new features:
 -   Propose the API/interface if applicable
 -   Consider backward compatibility
 
-Thank you for contributing to Code Sandbox!
+Thank you for contributing to Agent Sandbox!
 
 ## License
 
@@ -437,4 +437,4 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ---
 
-**Made with ❤️ by the Code Sandbox contributors**
+**Made with ❤️ by the Agent Sandbox contributors**

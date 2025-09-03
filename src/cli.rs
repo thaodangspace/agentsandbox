@@ -2,8 +2,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "codesandbox")]
-#[command(about = "Code Sandbox - Docker container manager")]
+#[command(name = "agentsandbox")]
+#[command(about = "Agent Sandbox - Docker container manager")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
     #[arg(
@@ -49,17 +49,17 @@ pub enum Commands {
     #[command(about = "List containers for this directory and optionally attach to one")]
     Ls,
     #[command(
-        about = "List all running Code Sandbox containers and optionally attach or open their directory"
+        about = "List all running Agent Sandbox containers and optionally attach or open their directory"
     )]
     Ps,
-    #[command(about = "Start the Code Sandbox API server")]
+    #[command(about = "Start the Agent Sandbox API server")]
     Serve {
         #[arg(short = 'd', long = "daemon", help = "Run server in the background")]
         daemon: bool,
     },
-    #[command(about = "Stop the running Code Sandbox API server")]
+    #[command(about = "Stop the running Agent Sandbox API server")]
     Stop,
-    #[command(about = "Restart the Code Sandbox API server")]
+    #[command(about = "Restart the Agent Sandbox API server")]
     Restart {
         #[arg(short = 'd', long = "daemon", help = "Run server in the background")]
         daemon: bool,

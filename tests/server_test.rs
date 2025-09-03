@@ -7,7 +7,7 @@ use axum::{
 use tower::ServiceExt;
 use tower_http::services::{ServeDir, ServeFile};
 
-use codesandbox::server;
+use agentsandbox::server;
 
 #[tokio::test]
 async fn websocket_route_requires_upgrade() {

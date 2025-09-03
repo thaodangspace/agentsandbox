@@ -101,7 +101,7 @@ async fn main() -> Result<()> {
         cleanup_containers(&current_dir)?;
         clear_last_container()?;
         println!(
-            "Removed all Code Sandbox containers for directory {}",
+            "Removed all Agent Sandbox containers for directory {}",
             current_dir.display()
         );
         return Ok(());
@@ -141,7 +141,7 @@ async fn main() -> Result<()> {
     if let Some(Commands::Ps) = cli.command.as_ref() {
         let containers = list_all_containers()?;
         if containers.is_empty() {
-            println!("No running Code Sandbox containers found.");
+            println!("No running Agent Sandbox containers found.");
             return Ok(());
         }
         println!("{:<4}{:<20}{:<20}Directory", "No.", "Project", "Container");
@@ -220,12 +220,12 @@ async fn main() -> Result<()> {
         let containers = list_containers(&current_dir)?;
         if containers.is_empty() {
             println!(
-                "No Code Sandbox containers found for directory {}",
+                "No Agent Sandbox containers found for directory {}",
                 current_dir.display()
             );
             let global = list_all_containers()?;
             if global.is_empty() {
-                println!("No running Code Sandbox containers found.");
+                println!("No running Agent Sandbox containers found.");
             } else {
                 println!("\nCurrently running containers:");
                 println!("{:<20}Container", "Project");
@@ -318,7 +318,7 @@ async fn main() -> Result<()> {
 
     let token = container_name.clone();
     println!(
-        "Starting {} Code Sandbox container: {container_name}",
+        "Starting {} Agent Sandbox container: {container_name}",
         cli.agent
     );
     println!("Container {container_name} started successfully!");

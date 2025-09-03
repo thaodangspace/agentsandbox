@@ -73,7 +73,7 @@ fn mount_language_configs(
 fn build_docker_image(current_user: &str) -> Result<()> {
     let dockerfile_content = create_dockerfile_content(current_user);
     let temp_dir = std::env::temp_dir();
-    let dockerfile_path = temp_dir.join("Dockerfile.codesandbox");
+    let dockerfile_path = temp_dir.join("Dockerfile.agentsandbox");
     std::fs::write(&dockerfile_path, dockerfile_content).context("Failed to write Dockerfile")?;
 
     println!("Building Docker image...");
@@ -81,7 +81,7 @@ fn build_docker_image(current_user: &str) -> Result<()> {
         .args([
             "build",
             "-t",
-            "codesandbox-image",
+            "agentsandbox-image",
             "-f",
             dockerfile_path.to_str().unwrap(),
             ".",
@@ -235,7 +235,7 @@ fn build_run_command(
         mount_language_configs(&mut docker_run, languages, current_user);
     }
 
-    docker_run.args(["codesandbox-image", "/bin/bash"]);
+    docker_run.args(["agentsandbox-image", "/bin/bash"]);
 
     Ok((docker_run, env_file_overlays))
 }

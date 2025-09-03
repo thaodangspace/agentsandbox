@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 fn get_state_file_path() -> Result<PathBuf> {
     let home_dir = home::home_dir().context("Failed to get home directory")?;
-    let config_dir = home_dir.join(".config").join("codesanbox");
+    let config_dir = home_dir.join(".config").join("agentsandbox");
     fs::create_dir_all(&config_dir).context("Failed to create config directory")?;
     Ok(config_dir.join("last_container"))
 }
@@ -40,4 +40,3 @@ pub fn clear_last_container() -> Result<()> {
     }
     Ok(())
 }
-
