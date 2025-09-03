@@ -15,6 +15,7 @@ mod worktree;
 
 use anyhow::{Context, Result};
 use base64::Engine as _;
+use comfy_table::{presets::ASCII_FULL, Table};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -144,16 +145,18 @@ async fn main() -> Result<()> {
             println!("No running Code Sandbox containers found.");
             return Ok(());
         }
-        println!("{:<4}{:<20}{:<20}Directory", "No.", "Project", "Container");
+        let mut table = Table::new();
+        table.load_preset(ASCII_FULL);
+        table.set_header(vec!["No.", "Project", "Container", "Directory"]);
         for (i, (project, name, path)) in containers.iter().enumerate() {
-            println!(
-                "{:<4}{:<20}{:<20}{}",
-                i + 1,
-                project,
-                name,
-                path.as_deref().unwrap_or("")
-            );
+            table.add_row(vec![
+                (i + 1).to_string(),
+                project.clone(),
+                name.clone(),
+                path.clone().unwrap_or_default(),
+            ]);
         }
+        println!("{table}");
         print!(
             "Select a container to attach (number), or type 'cd <number>' to open its directory: "
         );
@@ -342,7 +345,6 @@ async fn main() -> Result<()> {
     .await?;
     save_last_container(&container_name)?;
 
-    
     if use_web {
         maybe_open_web(
             &container_name,
