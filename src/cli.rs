@@ -6,10 +6,7 @@ use std::path::PathBuf;
 #[command(about = "Agent Sandbox - Docker container manager")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
-    #[arg(
-        long,
-        help = "Resume the last created container",
-    )]
+    #[arg(long, help = "Resume the last created container")]
     pub continue_: bool,
 
     #[arg(
@@ -86,6 +83,25 @@ impl Agent {
             Agent::Qwen => "qwen",
             Agent::Cursor => "cursor-agent",
         }
+    }
+
+    pub fn from_container_name(name: &str) -> Option<Self> {
+        let rest = name.strip_prefix("csb-")?;
+        for agent in [
+            Agent::Claude,
+            Agent::Gemini,
+            Agent::Codex,
+            Agent::Qwen,
+            Agent::Cursor,
+        ] {
+            let cmd = agent.command();
+            if let Some(after) = rest.strip_prefix(cmd) {
+                if after.starts_with('-') {
+                    return Some(agent);
+                }
+            }
+        }
+        None
     }
 }
 

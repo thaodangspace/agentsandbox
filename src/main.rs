@@ -22,14 +22,22 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use cli::{Cli, Commands};
+use cli::{Agent, Cli, Commands};
 use container::{
     auto_remove_old_containers, check_docker_availability, cleanup_containers, create_container,
     generate_container_name, list_all_containers, list_containers, resume_container,
 };
-use settings::load_settings;
+use settings::{load_settings, Settings};
 use state::{clear_last_container, load_last_container, save_last_container};
 use worktree::create_worktree;
+
+fn skip_permission_flag_for(settings: &Settings, agent: &Agent) -> Option<String> {
+    settings
+        .skip_permission_flags
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(agent.command()))
+        .map(|(_, flag)| flag.clone())
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -88,11 +96,6 @@ async fn main() -> Result<()> {
 
     check_docker_availability()?;
     auto_remove_old_containers(settings.auto_remove_minutes.unwrap_or(60))?;
-    let skip_permission_flag = settings
-        .skip_permission_flags
-        .iter()
-        .find(|(agent, _)| agent.eq_ignore_ascii_case(cli.agent.command()))
-        .map(|(_, flag)| flag.to_string());
 
     // Determine whether to use web flow
     let use_web = cli.web || settings.web.unwrap_or(false);
@@ -110,9 +113,12 @@ async fn main() -> Result<()> {
     if cli.continue_ {
         match load_last_container()? {
             Some(container_name) => {
+                let agent = Agent::from_container_name(&container_name)
+                    .unwrap_or_else(|| cli.agent.clone());
+                let skip_permission_flag = skip_permission_flag_for(&settings, &agent);
                 resume_container(
                     &container_name,
-                    &cli.agent,
+                    &agent,
                     true,
                     skip_permission_flag.as_deref(),
                     cli.shell,
@@ -122,7 +128,7 @@ async fn main() -> Result<()> {
                 if use_web {
                     maybe_open_web(
                         &container_name,
-                        &cli.agent,
+                        &agent,
                         &current_dir,
                         true,
                         skip_permission_flag.as_deref(),
@@ -187,9 +193,12 @@ async fn main() -> Result<()> {
                     env::set_current_dir(path)
                         .with_context(|| format!("Failed to change directory to {}", path))?;
                     let (_, name, _) = &containers[num - 1];
+                    let agent =
+                        Agent::from_container_name(name).unwrap_or_else(|| cli.agent.clone());
+                    let skip_permission_flag = skip_permission_flag_for(&settings, &agent);
                     resume_container(
                         name,
-                        &cli.agent,
+                        &agent,
                         false,
                         skip_permission_flag.as_deref(),
                         cli.shell,
@@ -199,7 +208,7 @@ async fn main() -> Result<()> {
                     if use_web {
                         maybe_open_web(
                             name,
-                            &cli.agent,
+                            &agent,
                             &current_dir,
                             false,
                             skip_permission_flag.as_deref(),
@@ -252,9 +261,12 @@ async fn main() -> Result<()> {
         match input.parse::<usize>() {
             Ok(num) if num >= 1 && num <= containers.len() => {
                 let selected = &containers[num - 1];
+                let agent =
+                    Agent::from_container_name(selected).unwrap_or_else(|| cli.agent.clone());
+                let skip_permission_flag = skip_permission_flag_for(&settings, &agent);
                 resume_container(
                     selected,
-                    &cli.agent,
+                    &agent,
                     false,
                     skip_permission_flag.as_deref(),
                     cli.shell,
@@ -264,7 +276,7 @@ async fn main() -> Result<()> {
                 if use_web {
                     maybe_open_web(
                         selected,
-                        &cli.agent,
+                        &agent,
                         &current_dir,
                         false,
                         skip_permission_flag.as_deref(),
@@ -282,9 +294,11 @@ async fn main() -> Result<()> {
         let containers = list_containers(&current_dir)?;
         if let Some(latest) = containers.first() {
             println!("Attaching to existing container for worktree: {}", latest);
+            let agent = Agent::from_container_name(latest).unwrap_or_else(|| cli.agent.clone());
+            let skip_permission_flag = skip_permission_flag_for(&settings, &agent);
             resume_container(
                 latest,
-                &cli.agent,
+                &agent,
                 false,
                 skip_permission_flag.as_deref(),
                 cli.shell,
@@ -294,7 +308,7 @@ async fn main() -> Result<()> {
             if use_web {
                 maybe_open_web(
                     latest,
-                    &cli.agent,
+                    &agent,
                     &current_dir,
                     false,
                     skip_permission_flag.as_deref(),
@@ -330,6 +344,7 @@ async fn main() -> Result<()> {
         "To attach to the container manually, run: docker exec -it {container_name} /bin/bash"
     );
 
+    let skip_permission_flag = skip_permission_flag_for(&settings, &cli.agent);
     create_container(
         &container_name,
         &current_dir,
@@ -342,7 +357,6 @@ async fn main() -> Result<()> {
     .await?;
     save_last_container(&container_name)?;
 
-    
     if use_web {
         maybe_open_web(
             &container_name,
