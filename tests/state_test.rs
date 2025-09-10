@@ -1,7 +1,10 @@
 #[path = "../src/state.rs"]
 mod state;
 
-use state::{clear_last_container, load_last_container, save_last_container};
+use state::{
+    clear_last_container, load_last_container, save_last_container, load_container_run_command,
+    save_container_run_command,
+};
 use std::{env, path::PathBuf, sync::Mutex};
 use tempfile::tempdir;
 
@@ -54,3 +57,19 @@ fn test_clear_last_container() {
     assert!(loaded.is_none());
 }
 
+#[test]
+fn test_save_and_load_run_command() {
+    let _dir = setup_temp_home();
+    let container = "container_abc";
+    let cmd = "cd '/tmp/project' && codex --yolo";
+    save_container_run_command(container, cmd).expect("save run command should succeed");
+    let loaded = load_container_run_command(container).expect("load should succeed");
+    assert_eq!(loaded, Some(cmd.to_string()));
+}
+
+#[test]
+fn test_load_missing_run_command() {
+    let _dir = setup_temp_home();
+    let loaded = load_container_run_command("does_not_exist").expect("load should succeed");
+    assert!(loaded.is_none());
+}

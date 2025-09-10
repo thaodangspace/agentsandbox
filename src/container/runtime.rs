@@ -10,6 +10,7 @@ use crate::language::{
     detect_project_languages, ensure_language_tools, sync_node_modules_from_host, ProjectLanguage,
 };
 use crate::settings::load_settings;
+use crate::state::{load_container_run_command, save_container_run_command};
 
 use super::manage::{container_exists, is_container_running};
 
@@ -270,6 +271,9 @@ pub async fn create_container(
         );
     }
     ensure_language_tools(container_name, &languages)?;
+    // Persist the initial agent run command so we can reuse it on attach/continue
+    let initial_cmd = build_agent_command(current_dir, agent, false, skip_permission_flag);
+    let _ = save_container_run_command(container_name, &initial_cmd);
     // For Node.js projects, copy host node_modules into the isolated volume in container
     sync_node_modules_from_host(container_name, current_dir, &languages)?;
     if attach {
@@ -375,20 +379,29 @@ async fn attach_to_container(
         println!("Attaching to container and starting {}...", agent);
     }
 
-    // Ensure the directory structure exists in the container
-    let mkdir_status = Command::new("docker")
-        .args(&[
-            "exec",
-            container_name,
-            "mkdir",
-            "-p",
-            &current_dir.display().to_string(),
-        ])
-        .status()
-        .context("Failed to create directory structure in container")?;
+    // Try to use the originally saved agent command if available when not in shell mode
+    let mut stored_cmd: Option<String> = None;
+    if !shell {
+        if let Ok(cmd) = load_container_run_command(container_name) {
+            stored_cmd = cmd;
+        }
+    }
+    // Ensure the directory structure exists only when we will cd into the current_dir
+    if shell || stored_cmd.is_none() {
+        let mkdir_status = Command::new("docker")
+            .args(&[
+                "exec",
+                container_name,
+                "mkdir",
+                "-p",
+                &current_dir.display().to_string(),
+            ])
+            .status()
+            .context("Failed to create directory structure in container")?;
 
-    if !mkdir_status.success() {
-        println!("Warning: Failed to create directory structure in container");
+        if !mkdir_status.success() {
+            println!("Warning: Failed to create directory structure in container");
+        }
     }
 
     if shell {
@@ -416,7 +429,14 @@ async fn attach_to_container(
         return Ok(());
     }
 
-    let command = build_agent_command(current_dir, agent, agent_continue, skip_permission_flag);
+    let command = if let Some(mut cmd) = stored_cmd {
+        if agent_continue && !cmd.contains(" --continue") {
+            cmd.push_str(" --continue");
+        }
+        cmd
+    } else {
+        build_agent_command(current_dir, agent, agent_continue, skip_permission_flag)
+    };
 
     let mut args = vec!["exec"];
     if allocate_tty {

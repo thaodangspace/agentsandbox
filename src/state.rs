@@ -40,3 +40,38 @@ pub fn clear_last_container() -> Result<()> {
     }
     Ok(())
 }
+
+fn get_base_config_dir() -> Result<PathBuf> {
+    let home_dir = home::home_dir().context("Failed to get home directory")?;
+    Ok(home_dir.join(".config").join("agentsandbox"))
+}
+
+fn get_container_dir(container_name: &str) -> Result<PathBuf> {
+    let dir = get_base_config_dir()?.join("containers").join(container_name);
+    fs::create_dir_all(&dir).context("Failed to create container state directory")?;
+    Ok(dir)
+}
+
+fn get_run_command_path(container_name: &str) -> Result<PathBuf> {
+    Ok(get_container_dir(container_name)?.join("run_cmd"))
+}
+
+pub fn save_container_run_command(container_name: &str, command: &str) -> Result<()> {
+    let path = get_run_command_path(container_name)?;
+    fs::write(&path, command).context("Failed to save container run command")?;
+    Ok(())
+}
+
+pub fn load_container_run_command(container_name: &str) -> Result<Option<String>> {
+    let path = get_base_config_dir()?.join("containers").join(container_name).join("run_cmd");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let contents = fs::read_to_string(&path).context("Failed to read container run command")?;
+    let trimmed = contents.trim().to_string();
+    if trimmed.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(trimmed))
+    }
+}

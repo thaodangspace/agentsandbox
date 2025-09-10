@@ -28,7 +28,9 @@ use container::{
     generate_container_name, list_all_containers, list_containers, resume_container,
 };
 use settings::load_settings;
-use state::{clear_last_container, load_last_container, save_last_container};
+use state::{
+    clear_last_container, load_last_container, load_container_run_command, save_last_container,
+};
 use worktree::create_worktree;
 
 #[tokio::main]
@@ -420,7 +422,16 @@ async fn maybe_open_web(
     ensure_server_running().await?;
 
     let token = container_name;
-    let cmd = build_agent_command_for_web(current_dir, agent, agent_continue, skip_permission_flag);
+    // Prefer the originally saved run command if available
+    let mut cmd = if let Ok(Some(saved)) = load_container_run_command(container_name) {
+        let mut c = saved;
+        if agent_continue && !c.contains(" --continue") {
+            c.push_str(" --continue");
+        }
+        c
+    } else {
+        build_agent_command_for_web(current_dir, agent, agent_continue, skip_permission_flag)
+    };
     let run_b64 = base64::engine::general_purpose::STANDARD.encode(cmd.as_bytes());
     // Also pass the desired working directory so the shell starts in project root
     let cwd_b64 = base64::engine::general_purpose::STANDARD
