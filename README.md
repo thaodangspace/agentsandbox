@@ -181,24 +181,6 @@ agentsandbox ps
 agentsandbox --worktree feature-branch
 ```
 
-### Web UI Mode
-
-To open the browser-based terminal instead of attaching in your CLI:
-
-```bash
-agentsandbox --web
-```
-
-Set it as the default via `~/.config/agentsandbox/settings.json`:
-
-```json
-{
-  "web": true
-}
-```
-
-When web mode is enabled, agentsandbox will start the local server if needed, open `http://<host>:6789` (default `localhost`, configurable via `web_host` in settings), and automatically run your selected agent in the browser terminal.
-
 ## Connecting to the Container
 
 After the container is created, you can connect to it using:
@@ -224,45 +206,6 @@ agentsandbox ps
 ```
 
 This view also allows you to `cd` directly into the project directory associated with a container.
-
-## API
-
-### REST API for Container Changes
-
-This repository includes an optional HTTP server that reports file changes inside a running sandbox container.
-
-Start the server:
-
-```bash
-agentsandbox serve
-```
-
-Run it as a background daemon:
-
-```bash
-agentsandbox serve -d
-```
-
-Stop the server:
-
-```bash
-agentsandbox stop
-```
-
-Restart the server (optionally in the background):
-
-```bash
-agentsandbox restart
-agentsandbox restart -d
-```
-
-The server listens on port 6789. Query the changes for a specific container:
-
-```bash
-curl http://localhost:6789/api/changed/<container-name>
-```
-
-The response lists changed files along with their git status and diff contents.
 
 ### Container Contents
 
@@ -291,17 +234,15 @@ Additional behavior can be configured via `settings.json` located at
         "qwen": "--yolo",
         "cursor": "--yolo"
     },
-    "env_files": [
-        ".env",
-        ".env.local",
-        ".env.development.local",
-        ".env.test.local",
-        ".env.production.local"
-    ],
-    "web": true,
-    "web_host": "my.devbox.local"
-}
-```
+      "env_files": [
+          ".env",
+          ".env.local",
+          ".env.development.local",
+          ".env.test.local",
+          ".env.production.local"
+      ]
+  }
+  ```
 
 The `skip_permission_flags` map assigns a permission-skipping flag to each
 agent. When launching an agent, the corresponding flag is appended to the

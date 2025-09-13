@@ -14,4 +14,3 @@ fn detect_languages() {
     assert!(langs.contains(&ProjectLanguage::Rust));
     assert!(langs.contains(&ProjectLanguage::NodeJs));
 }
-

@@ -155,5 +155,3 @@ pub fn sync_node_modules_from_host(
 
     Ok(())
 }
-
- 

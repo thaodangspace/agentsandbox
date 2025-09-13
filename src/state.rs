@@ -47,7 +47,9 @@ fn get_base_config_dir() -> Result<PathBuf> {
 }
 
 fn get_container_dir(container_name: &str) -> Result<PathBuf> {
-    let dir = get_base_config_dir()?.join("containers").join(container_name);
+    let dir = get_base_config_dir()?
+        .join("containers")
+        .join(container_name);
     fs::create_dir_all(&dir).context("Failed to create container state directory")?;
     Ok(dir)
 }
@@ -63,7 +65,10 @@ pub fn save_container_run_command(container_name: &str, command: &str) -> Result
 }
 
 pub fn load_container_run_command(container_name: &str) -> Result<Option<String>> {
-    let path = get_base_config_dir()?.join("containers").join(container_name).join("run_cmd");
+    let path = get_base_config_dir()?
+        .join("containers")
+        .join(container_name)
+        .join("run_cmd");
     if !path.exists() {
         return Ok(None);
     }

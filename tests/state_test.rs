@@ -2,8 +2,8 @@
 mod state;
 
 use state::{
-    clear_last_container, load_last_container, save_last_container, load_container_run_command,
-    save_container_run_command,
+    clear_last_container, load_container_run_command, load_last_container,
+    save_container_run_command, save_last_container,
 };
 use std::{env, path::PathBuf, sync::Mutex};
 use tempfile::tempdir;
@@ -30,7 +30,11 @@ fn setup_temp_home() -> TempHome {
     let original = env::var_os("HOME").map(PathBuf::from);
     let dir = tempdir().expect("failed to create temp dir");
     env::set_var("HOME", dir.path());
-    TempHome { _dir: dir, _guard: guard, original }
+    TempHome {
+        _dir: dir,
+        _guard: guard,
+        original,
+    }
 }
 
 #[test]

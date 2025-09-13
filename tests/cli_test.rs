@@ -32,48 +32,6 @@ fn parse_ps_subcommand() {
 }
 
 #[test]
-fn parse_serve_subcommand() {
-    let cli = Cli::parse_from(["agentsandbox", "serve"]);
-    assert!(matches!(
-        cli.command,
-        Some(Commands::Serve { daemon: false })
-    ));
-}
-
-#[test]
-fn parse_serve_daemon_flag() {
-    let cli = Cli::parse_from(["agentsandbox", "serve", "-d"]);
-    assert!(matches!(
-        cli.command,
-        Some(Commands::Serve { daemon: true })
-    ));
-}
-
-#[test]
-fn parse_stop_subcommand() {
-    let cli = Cli::parse_from(["agentsandbox", "stop"]);
-    assert!(matches!(cli.command, Some(Commands::Stop)));
-}
-
-#[test]
-fn parse_restart_subcommand() {
-    let cli = Cli::parse_from(["agentsandbox", "restart"]);
-    assert!(matches!(
-        cli.command,
-        Some(Commands::Restart { daemon: false })
-    ));
-}
-
-#[test]
-fn parse_restart_daemon_flag() {
-    let cli = Cli::parse_from(["agentsandbox", "restart", "-d"]);
-    assert!(matches!(
-        cli.command,
-        Some(Commands::Restart { daemon: true })
-    ));
-}
-
-#[test]
 fn continue_with_cleanup_subcommand_parses() {
     // We allow specifying --continue with a subcommand; the caller can decide semantics
     let cli = Cli::parse_from(["agentsandbox", "--continue", "cleanup"]);
@@ -106,12 +64,6 @@ fn parse_agent_option() {
 fn parse_shell_flag() {
     let cli = Cli::parse_from(["agentsandbox", "--shell"]);
     assert!(cli.shell);
-}
-
-#[test]
-fn parse_web_flag() {
-    let cli = Cli::parse_from(["agentsandbox", "--web"]);
-    assert!(cli.web);
 }
 
 #[test]

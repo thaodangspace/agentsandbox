@@ -26,9 +26,6 @@ pub struct Cli {
     #[arg(long, help = "Attach to container shell without starting the agent")]
     pub shell: bool,
 
-    #[arg(long, help = "Open web UI instead of attaching in terminal")]
-    pub web: bool,
-
     #[arg(
         long,
         value_enum,
@@ -49,18 +46,6 @@ pub enum Commands {
         about = "List all running Agent Sandbox containers and optionally attach or open their directory"
     )]
     Ps,
-    #[command(about = "Start the Agent Sandbox API server")]
-    Serve {
-        #[arg(short = 'd', long = "daemon", help = "Run server in the background")]
-        daemon: bool,
-    },
-    #[command(about = "Stop the running Agent Sandbox API server")]
-    Stop,
-    #[command(about = "Restart the Agent Sandbox API server")]
-    Restart {
-        #[arg(short = 'd', long = "daemon", help = "Run server in the background")]
-        daemon: bool,
-    },
     #[command(about = "Remove all containers created from this directory")]
     Cleanup,
 }

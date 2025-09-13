@@ -347,7 +347,7 @@ pub fn build_agent_command(
     let path_str = current_dir.display().to_string();
     let escaped = path_str.replace('\'', "'\\''");
     let mut command = format!(
-        "cd '{}' && export PATH=\"$HOME/.local/bin:$PATH\" && {}",
+        "cd '{}' && export PATH=\"$HOME/.cargo/bin:$HOME/.local/bin:$PATH\" && if [ -f \"$HOME/.cargo/env\" ]; then . \"$HOME/.cargo/env\"; fi && {}",
         escaped,
         agent.command()
     );
@@ -407,7 +407,10 @@ async fn attach_to_container(
     if shell {
         let path_str = current_dir.display().to_string();
         let escaped = path_str.replace('\'', "'\\''");
-        let command = format!("cd '{}' && source ~/.bashrc && exec /bin/bash", escaped);
+        let command = format!(
+            "cd '{}' && (source ~/.cargo/env 2>/dev/null || true); (source ~/.bashrc 2>/dev/null || true); exec /bin/bash",
+            escaped
+        );
         let mut args = vec!["exec"];
         if allocate_tty {
             args.push("-it");
@@ -475,6 +478,8 @@ RUN apt-get update && apt-get install -y \
     wget \
     git \
     build-essential \
+    pkg-config \
+    libssl-dev \
     python3 \
     python3-pip \
     sudo \
@@ -492,9 +497,10 @@ RUN wget https://go.dev/dl/go1.24.5.linux-amd64.tar.gz && \
     tar -C /usr/local -xzf go1.24.5.linux-amd64.tar.gz && \
     rm go1.24.5.linux-amd64.tar.gz
 
-# Install Rust and Cargo
+# Install Rust and Cargo (root)
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
-    /root/.cargo/bin/rustup component add rustfmt clippy
+    /root/.cargo/bin/rustup component add rustfmt clippy && \
+    echo 'source ~/.cargo/env' >> /root/.bashrc
 
 # Create user with sudo privileges
 RUN useradd -m -s /bin/bash {user} && \
@@ -512,18 +518,20 @@ RUN curl https://cursor.com/install -fsS | bash
 USER {user}
 WORKDIR /home/{user}
 
-# Set up PATH environment for the user session
-ENV PATH="/home/{user}/.local/bin:/usr/local/go/bin:/home/{user}/.cargo/bin:$PATH"
+# Ensure rustup/cargo and other tools are on PATH
+ENV PATH="/root/.cargo/bin:/usr/local/go/bin:/home/{user}/.cargo/bin:/home/{user}/.local/bin:$PATH"
 
 # Install Rust for the user and ensure cargo is available
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
-    ~/.cargo/bin/rustup component add rustfmt clippy
+    ~/.cargo/bin/rustup component add rustfmt clippy && \
+    echo 'source ~/.cargo/env' >> ~/.bashrc
 
 # Install uv for Python tooling
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Add Go, Rust, Cargo, and uv to PATH
-RUN echo 'export PATH="/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"' >> ~/.bashrc
+RUN echo 'export PATH="/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"' >> ~/.bashrc && \
+    echo 'source ~/.cargo/env' >> ~/.bashrc
 
 # Set working directory to home
 WORKDIR /home/{user}
