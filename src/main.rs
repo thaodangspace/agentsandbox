@@ -29,8 +29,10 @@ use container::{
 };
 use settings::load_settings;
 use state::{
-    clear_last_container, load_last_container, load_container_run_command, save_last_container,
+    clear_last_container, load_container_run_command, load_last_container, save_last_container,
 };
+use tabled::settings::Style;
+use tabled::{Table, Tabled};
 use worktree::create_worktree;
 
 #[tokio::main]
@@ -148,16 +150,28 @@ async fn main() -> Result<()> {
             println!("No running Agent Sandbox containers found.");
             return Ok(());
         }
-        println!("{:<4}{:<20}{:<20}Directory", "No.", "Project", "Container");
-        for (i, (project, name, path)) in containers.iter().enumerate() {
-            println!(
-                "{:<4}{:<20}{:<20}{}",
-                i + 1,
-                project,
-                name,
-                path.as_deref().unwrap_or("")
-            );
+        #[derive(Tabled)]
+        struct Row {
+            #[tabled(rename = "No.")]
+            no: usize,
+            #[tabled(rename = "Project")]
+            project: String,
+            #[tabled(rename = "Container")]
+            container: String,
+            #[tabled(rename = "Directory")]
+            directory: String,
         }
+        let rows: Vec<Row> = containers
+            .iter()
+            .enumerate()
+            .map(|(i, (project, name, path))| Row {
+                no: i + 1,
+                project: project.clone(),
+                container: name.clone(),
+                directory: path.as_deref().unwrap_or("").to_string(),
+            })
+            .collect();
+        println!("{}", Table::new(rows).with(Style::rounded()));
         print!(
             "Select a container to attach (number), or type 'cd <number>' to open its directory: "
         );
@@ -234,17 +248,40 @@ async fn main() -> Result<()> {
                 println!("No running Agent Sandbox containers found.");
             } else {
                 println!("\nCurrently running containers:");
-                println!("{:<20}Container", "Project");
-                for (project, name, _) in global {
-                    println!("{:<20}{}", project, name);
+                #[derive(Tabled)]
+                struct GlobalRow {
+                    #[tabled(rename = "Project")]
+                    project: String,
+                    #[tabled(rename = "Container")]
+                    container: String,
                 }
+                let rows: Vec<GlobalRow> = global
+                    .into_iter()
+                    .map(|(project, name, _)| GlobalRow {
+                        project,
+                        container: name,
+                    })
+                    .collect();
+                println!("{}", Table::new(rows).with(Style::rounded()));
             }
             return Ok(());
         }
-
-        for (i, name) in containers.iter().enumerate() {
-            println!("{}: {}", i + 1, name);
+        #[derive(Tabled)]
+        struct Row {
+            #[tabled(rename = "No.")]
+            no: usize,
+            #[tabled(rename = "Container")]
+            container: String,
         }
+        let rows: Vec<Row> = containers
+            .iter()
+            .enumerate()
+            .map(|(i, name)| Row {
+                no: i + 1,
+                container: name.clone(),
+            })
+            .collect();
+        println!("{}", Table::new(rows).with(Style::rounded()));
 
         print!("Select a container to attach (number, or press Enter to cancel): ");
         io::stdout().flush().ok();
@@ -423,7 +460,7 @@ async fn maybe_open_web(
 
     let token = container_name;
     // Prefer the originally saved run command if available
-    let mut cmd = if let Ok(Some(saved)) = load_container_run_command(container_name) {
+    let cmd = if let Ok(Some(saved)) = load_container_run_command(container_name) {
         let mut c = saved;
         if agent_continue && !c.contains(" --continue") {
             c.push_str(" --continue");

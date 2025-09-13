@@ -10,6 +10,9 @@ mod settings;
 #[path = "../src/language.rs"]
 mod language;
 
+#[path = "../src/state.rs"]
+mod state;
+
 #[path = "../src/container/mod.rs"]
 mod container;
 
