@@ -72,7 +72,26 @@ fn mount_language_configs(
 }
 
 fn build_docker_image(current_user: &str) -> Result<()> {
-    let dockerfile_content = create_dockerfile_content(current_user);
+    // Determine host UID/GID so the container user matches host permissions
+    let uid_output = Command::new("id")
+        .arg("-u")
+        .output()
+        .context("Failed to get host UID")?;
+    let gid_output = Command::new("id")
+        .arg("-g")
+        .output()
+        .context("Failed to get host GID")?;
+
+    let uid: u32 = String::from_utf8_lossy(&uid_output.stdout)
+        .trim()
+        .parse()
+        .context("Invalid UID")?;
+    let gid: u32 = String::from_utf8_lossy(&gid_output.stdout)
+        .trim()
+        .parse()
+        .context("Invalid GID")?;
+
+    let dockerfile_content = create_dockerfile_content(current_user, uid, gid);
     let temp_dir = std::env::temp_dir();
     let dockerfile_path = temp_dir.join("Dockerfile.agentsandbox");
     std::fs::write(&dockerfile_path, dockerfile_content).context("Failed to write Dockerfile")?;
@@ -465,9 +484,9 @@ async fn attach_to_container(
     Ok(())
 }
 
-fn create_dockerfile_content(user: &str) -> String {
+fn create_dockerfile_content(user: &str, uid: u32, gid: u32) -> String {
     format!(
-        r#"FROM ubuntu:22.04
+        r#"FROM ubuntu:24.04
 
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -502,9 +521,28 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
     /root/.cargo/bin/rustup component add rustfmt clippy && \
     echo 'source ~/.cargo/env' >> /root/.bashrc
 
-# Create user with sudo privileges
-RUN useradd -m -s /bin/bash {user} && \
+# Create user with host UID/GID to avoid permissions issues on mounted volumes
+RUN set -eux; \
+    existing_grp_by_gid="$(getent group {gid} | cut -d: -f1 || true)"; \
+    existing_usr_by_uid="$(getent passwd {uid} | cut -d: -f1 || true)"; \
+    # Ensure group named {user} exists with desired GID
+    if [ -n "$existing_grp_by_gid" ] && [ "$existing_grp_by_gid" != "{user}" ]; then \
+        groupmod -n {user} "$existing_grp_by_gid"; \
+    elif ! getent group {user} >/dev/null; then \
+        groupadd -g {gid} {user}; \
+    fi; \
+    # Ensure user named {user} exists with desired UID/GID and home
+    if id -u {user} >/dev/null 2>&1; then \
+        usermod -u {uid} -g {user} -s /bin/bash {user}; \
+    elif [ -n "$existing_usr_by_uid" ] && [ "$existing_usr_by_uid" != "{user}" ]; then \
+        usermod -l {user} "$existing_usr_by_uid"; \
+        usermod -d /home/{user} -m {user}; \
+        usermod -g {user} {user}; \
+    else \
+        useradd -m -u {uid} -g {user} -s /bin/bash {user}; \
+    fi; \
     echo "{user} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+ENV HOME=/home/{user}
 USER root
 # Install Claude Code
 RUN npm install -g @anthropic-ai/claude-code
@@ -514,12 +552,16 @@ RUN npm install -g @qwen-code/qwen-code@latest
 
 # Install Cursor CLI
 RUN curl https://cursor.com/install -fsS | bash 
+
+# Prepare home directory and user-local bin
+RUN mkdir -p /home/{user}/.local/bin && chown -R {user}:{user} /home/{user}
+
 # Switch to user
 USER {user}
 WORKDIR /home/{user}
 
-# Ensure rustup/cargo and other tools are on PATH
-ENV PATH="/root/.cargo/bin:/usr/local/go/bin:/home/{user}/.cargo/bin:/home/{user}/.local/bin:$PATH"
+# Ensure rustup/cargo and other tools are on PATH (prefer user toolchains)
+ENV PATH="/usr/local/go/bin:/home/{user}/.cargo/bin:/home/{user}/.local/bin:$PATH"
 
 # Install Rust for the user and ensure cargo is available
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
@@ -539,6 +581,8 @@ WORKDIR /home/{user}
 # Keep container running
 CMD ["/bin/bash"]
 "#,
-        user = user
+        user = user,
+        uid = uid,
+        gid = gid
     )
 }
