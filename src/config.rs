@@ -65,4 +65,3 @@ pub fn get_claude_json_paths() -> Vec<PathBuf> {
 
     paths
 }
-

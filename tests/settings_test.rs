@@ -9,8 +9,8 @@ use tempfile::tempdir;
 #[test]
 fn default_when_missing() {
     let tmp = tempdir().unwrap();
-    let original = env::var("CODESANDBOX_CONFIG_HOME").ok();
-    env::set_var("CODESANDBOX_CONFIG_HOME", tmp.path());
+    let original = env::var("AGENTSANDBOX_CONFIG_HOME").ok();
+    env::set_var("AGENTSANDBOX_CONFIG_HOME", tmp.path());
 
     let settings = load_settings().unwrap();
     assert_eq!(settings.auto_remove_minutes, Some(60));
@@ -47,9 +47,9 @@ fn default_when_missing() {
     );
 
     if let Some(val) = original {
-        env::set_var("CODESANDBOX_CONFIG_HOME", val);
+        env::set_var("AGENTSANDBOX_CONFIG_HOME", val);
     } else {
-        env::remove_var("CODESANDBOX_CONFIG_HOME");
+        env::remove_var("AGENTSANDBOX_CONFIG_HOME");
     }
 }
 
@@ -64,8 +64,8 @@ fn read_from_file() {
     )
     .unwrap();
 
-    let original = env::var("CODESANDBOX_CONFIG_HOME").ok();
-    env::set_var("CODESANDBOX_CONFIG_HOME", config_dir);
+    let original = env::var("AGENTSANDBOX_CONFIG_HOME").ok();
+    env::set_var("AGENTSANDBOX_CONFIG_HOME", config_dir);
 
     let settings = load_settings().unwrap();
     assert_eq!(settings.auto_remove_minutes, Some(30));
@@ -79,9 +79,8 @@ fn read_from_file() {
     assert_eq!(settings.env_files, vec![".custom.env".to_string()]);
 
     if let Some(val) = original {
-        env::set_var("CODESANDBOX_CONFIG_HOME", val);
+        env::set_var("AGENTSANDBOX_CONFIG_HOME", val);
     } else {
-        env::remove_var("CODESANDBOX_CONFIG_HOME");
+        env::remove_var("AGENTSANDBOX_CONFIG_HOME");
     }
 }
-

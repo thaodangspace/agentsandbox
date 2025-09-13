@@ -10,6 +10,7 @@ use crate::language::{
     detect_project_languages, ensure_language_tools, sync_node_modules_from_host, ProjectLanguage,
 };
 use crate::settings::load_settings;
+use crate::state::{load_container_run_command, save_container_run_command};
 
 use super::manage::{container_exists, is_container_running};
 
@@ -71,9 +72,28 @@ fn mount_language_configs(
 }
 
 fn build_docker_image(current_user: &str) -> Result<()> {
-    let dockerfile_content = create_dockerfile_content(current_user);
+    // Determine host UID/GID so the container user matches host permissions
+    let uid_output = Command::new("id")
+        .arg("-u")
+        .output()
+        .context("Failed to get host UID")?;
+    let gid_output = Command::new("id")
+        .arg("-g")
+        .output()
+        .context("Failed to get host GID")?;
+
+    let uid: u32 = String::from_utf8_lossy(&uid_output.stdout)
+        .trim()
+        .parse()
+        .context("Invalid UID")?;
+    let gid: u32 = String::from_utf8_lossy(&gid_output.stdout)
+        .trim()
+        .parse()
+        .context("Invalid GID")?;
+
+    let dockerfile_content = create_dockerfile_content(current_user, uid, gid);
     let temp_dir = std::env::temp_dir();
-    let dockerfile_path = temp_dir.join("Dockerfile.codesandbox");
+    let dockerfile_path = temp_dir.join("Dockerfile.agentsandbox");
     std::fs::write(&dockerfile_path, dockerfile_content).context("Failed to write Dockerfile")?;
 
     println!("Building Docker image...");
@@ -81,7 +101,7 @@ fn build_docker_image(current_user: &str) -> Result<()> {
         .args([
             "build",
             "-t",
-            "codesandbox-image",
+            "agentsandbox-image",
             "-f",
             dockerfile_path.to_str().unwrap(),
             ".",
@@ -214,6 +234,10 @@ fn build_run_command(
         Agent::Gemini => {
             mount_agent_config(&mut docker_run, &["gemini"], current_dir, current_user);
         }
+        Agent::Codex => {
+            // Map Codex config directories (e.g., ~/.codex) into the container
+            mount_agent_config(&mut docker_run, &["codex"], current_dir, current_user);
+        }
         Agent::Qwen => {
             mount_agent_config(&mut docker_run, &["qwen"], current_dir, current_user);
         }
@@ -231,7 +255,7 @@ fn build_run_command(
         mount_language_configs(&mut docker_run, languages, current_user);
     }
 
-    docker_run.args(["codesandbox-image", "/bin/bash"]);
+    docker_run.args(["agentsandbox-image", "/bin/bash"]);
 
     Ok((docker_run, env_file_overlays))
 }
@@ -266,6 +290,9 @@ pub async fn create_container(
         );
     }
     ensure_language_tools(container_name, &languages)?;
+    // Persist the initial agent run command so we can reuse it on attach/continue
+    let initial_cmd = build_agent_command(current_dir, agent, false, skip_permission_flag);
+    let _ = save_container_run_command(container_name, &initial_cmd);
     // For Node.js projects, copy host node_modules into the isolated volume in container
     sync_node_modules_from_host(container_name, current_dir, &languages)?;
     if attach {
@@ -339,7 +366,7 @@ pub fn build_agent_command(
     let path_str = current_dir.display().to_string();
     let escaped = path_str.replace('\'', "'\\''");
     let mut command = format!(
-        "cd '{}' && export PATH=\"$HOME/.local/bin:$PATH\" && {}",
+        "cd '{}' && export PATH=\"$HOME/.cargo/bin:$HOME/.local/bin:$PATH\" && if [ -f \"$HOME/.cargo/env\" ]; then . \"$HOME/.cargo/env\"; fi && {}",
         escaped,
         agent.command()
     );
@@ -371,26 +398,38 @@ async fn attach_to_container(
         println!("Attaching to container and starting {}...", agent);
     }
 
-    // Ensure the directory structure exists in the container
-    let mkdir_status = Command::new("docker")
-        .args(&[
-            "exec",
-            container_name,
-            "mkdir",
-            "-p",
-            &current_dir.display().to_string(),
-        ])
-        .status()
-        .context("Failed to create directory structure in container")?;
+    // Try to use the originally saved agent command if available when not in shell mode
+    let mut stored_cmd: Option<String> = None;
+    if !shell {
+        if let Ok(cmd) = load_container_run_command(container_name) {
+            stored_cmd = cmd;
+        }
+    }
+    // Ensure the directory structure exists only when we will cd into the current_dir
+    if shell || stored_cmd.is_none() {
+        let mkdir_status = Command::new("docker")
+            .args(&[
+                "exec",
+                container_name,
+                "mkdir",
+                "-p",
+                &current_dir.display().to_string(),
+            ])
+            .status()
+            .context("Failed to create directory structure in container")?;
 
-    if !mkdir_status.success() {
-        println!("Warning: Failed to create directory structure in container");
+        if !mkdir_status.success() {
+            println!("Warning: Failed to create directory structure in container");
+        }
     }
 
     if shell {
         let path_str = current_dir.display().to_string();
         let escaped = path_str.replace('\'', "'\\''");
-        let command = format!("cd '{}' && source ~/.bashrc && exec /bin/bash", escaped);
+        let command = format!(
+            "cd '{}' && (source ~/.cargo/env 2>/dev/null || true); (source ~/.bashrc 2>/dev/null || true); exec /bin/bash",
+            escaped
+        );
         let mut args = vec!["exec"];
         if allocate_tty {
             args.push("-it");
@@ -412,7 +451,14 @@ async fn attach_to_container(
         return Ok(());
     }
 
-    let command = build_agent_command(current_dir, agent, agent_continue, skip_permission_flag);
+    let command = if let Some(mut cmd) = stored_cmd {
+        if agent_continue && !cmd.contains(" --continue") {
+            cmd.push_str(" --continue");
+        }
+        cmd
+    } else {
+        build_agent_command(current_dir, agent, agent_continue, skip_permission_flag)
+    };
 
     let mut args = vec!["exec"];
     if allocate_tty {
@@ -438,9 +484,9 @@ async fn attach_to_container(
     Ok(())
 }
 
-fn create_dockerfile_content(user: &str) -> String {
+fn create_dockerfile_content(user: &str, uid: u32, gid: u32) -> String {
     format!(
-        r#"FROM ubuntu:22.04
+        r#"FROM ubuntu:24.04
 
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -451,13 +497,14 @@ RUN apt-get update && apt-get install -y \
     wget \
     git \
     build-essential \
+    pkg-config \
+    libssl-dev \
     python3 \
     python3-pip \
     sudo \
     ca-certificates \
     gnupg \
     lsb-release \
-    tmux \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js v22
@@ -469,13 +516,33 @@ RUN wget https://go.dev/dl/go1.24.5.linux-amd64.tar.gz && \
     tar -C /usr/local -xzf go1.24.5.linux-amd64.tar.gz && \
     rm go1.24.5.linux-amd64.tar.gz
 
-# Install Rust and Cargo
+# Install Rust and Cargo (root)
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
-    /root/.cargo/bin/rustup component add rustfmt clippy
+    /root/.cargo/bin/rustup component add rustfmt clippy && \
+    echo 'source ~/.cargo/env' >> /root/.bashrc
 
-# Create user with sudo privileges
-RUN useradd -m -s /bin/bash {user} && \
+# Create user with host UID/GID to avoid permissions issues on mounted volumes
+RUN set -eux; \
+    existing_grp_by_gid="$(getent group {gid} | cut -d: -f1 || true)"; \
+    existing_usr_by_uid="$(getent passwd {uid} | cut -d: -f1 || true)"; \
+    # Ensure group named {user} exists with desired GID
+    if [ -n "$existing_grp_by_gid" ] && [ "$existing_grp_by_gid" != "{user}" ]; then \
+        groupmod -n {user} "$existing_grp_by_gid"; \
+    elif ! getent group {user} >/dev/null; then \
+        groupadd -g {gid} {user}; \
+    fi; \
+    # Ensure user named {user} exists with desired UID/GID and home
+    if id -u {user} >/dev/null 2>&1; then \
+        usermod -u {uid} -g {user} -s /bin/bash {user}; \
+    elif [ -n "$existing_usr_by_uid" ] && [ "$existing_usr_by_uid" != "{user}" ]; then \
+        usermod -l {user} "$existing_usr_by_uid"; \
+        usermod -d /home/{user} -m {user}; \
+        usermod -g {user} {user}; \
+    else \
+        useradd -m -u {uid} -g {user} -s /bin/bash {user}; \
+    fi; \
     echo "{user} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+ENV HOME=/home/{user}
 USER root
 # Install Claude Code
 RUN npm install -g @anthropic-ai/claude-code
@@ -484,23 +551,29 @@ RUN npm install -g @openai/codex
 RUN npm install -g @qwen-code/qwen-code@latest
 
 # Install Cursor CLI
-RUN curl https://cursor.com/install -fsS | bash
+RUN curl https://cursor.com/install -fsS | bash 
+
+# Prepare home directory and user-local bin
+RUN mkdir -p /home/{user}/.local/bin && chown -R {user}:{user} /home/{user}
+
 # Switch to user
 USER {user}
 WORKDIR /home/{user}
 
-# Set up PATH environment for the user session
-ENV PATH="/home/{user}/.local/bin:/usr/local/go/bin:/home/{user}/.cargo/bin:$PATH"
+# Ensure rustup/cargo and other tools are on PATH (prefer user toolchains)
+ENV PATH="/usr/local/go/bin:/home/{user}/.cargo/bin:/home/{user}/.local/bin:$PATH"
 
 # Install Rust for the user and ensure cargo is available
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
-    ~/.cargo/bin/rustup component add rustfmt clippy
+    ~/.cargo/bin/rustup component add rustfmt clippy && \
+    echo 'source ~/.cargo/env' >> ~/.bashrc
 
 # Install uv for Python tooling
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Add Go, Rust, Cargo, and uv to PATH
-RUN echo 'export PATH="/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"' >> ~/.bashrc
+RUN echo 'export PATH="/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"' >> ~/.bashrc && \
+    echo 'source ~/.cargo/env' >> ~/.bashrc
 
 # Set working directory to home
 WORKDIR /home/{user}
@@ -508,6 +581,8 @@ WORKDIR /home/{user}
 # Keep container running
 CMD ["/bin/bash"]
 "#,
-        user = user
+        user = user,
+        uid = uid,
+        gid = gid
     )
 }

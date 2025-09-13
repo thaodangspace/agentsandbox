@@ -2,23 +2,12 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "codesandbox")]
-#[command(about = "Code Sandbox - Docker container manager")]
+#[command(name = "agentsandbox")]
+#[command(about = "Agent Sandbox - Docker container manager")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
-    #[arg(
-        long,
-        help = "Resume the last created container",
-        conflicts_with = "cleanup"
-    )]
+    #[arg(long, help = "Resume the last created container")]
     pub continue_: bool,
-
-    #[arg(
-        long,
-        help = "Remove all containers created from this directory",
-        conflicts_with = "continue_"
-    )]
-    pub cleanup: bool,
 
     #[arg(
         long = "add_dir",
@@ -37,9 +26,6 @@ pub struct Cli {
     #[arg(long, help = "Attach to container shell without starting the agent")]
     pub shell: bool,
 
-    #[arg(long, help = "Open web UI instead of attaching in terminal")]
-    pub web: bool,
-
     #[arg(
         long,
         value_enum,
@@ -57,21 +43,11 @@ pub enum Commands {
     #[command(about = "List containers for this directory and optionally attach to one")]
     Ls,
     #[command(
-        about = "List all running Code Sandbox containers and optionally attach or open their directory"
+        about = "List all running Agent Sandbox containers and optionally attach or open their directory"
     )]
     Ps,
-    #[command(about = "Start the Code Sandbox API server")]
-    Serve {
-        #[arg(short = 'd', long = "daemon", help = "Run server in the background")]
-        daemon: bool,
-    },
-    #[command(about = "Stop the running Code Sandbox API server")]
-    Stop,
-    #[command(about = "Restart the Code Sandbox API server")]
-    Restart {
-        #[arg(short = 'd', long = "daemon", help = "Run server in the background")]
-        daemon: bool,
-    },
+    #[command(about = "Remove all containers created from this directory")]
+    Cleanup,
 }
 
 #[derive(ValueEnum, Clone, Debug)]
@@ -92,6 +68,25 @@ impl Agent {
             Agent::Qwen => "qwen",
             Agent::Cursor => "cursor-agent",
         }
+    }
+
+    pub fn from_container_name(name: &str) -> Option<Self> {
+        let rest = name.strip_prefix("agent-")?;
+        for agent in [
+            Agent::Claude,
+            Agent::Gemini,
+            Agent::Codex,
+            Agent::Qwen,
+            Agent::Cursor,
+        ] {
+            let cmd = agent.command();
+            if let Some(after) = rest.strip_prefix(cmd) {
+                if after.starts_with('-') {
+                    return Some(agent);
+                }
+            }
+        }
+        None
     }
 }
 

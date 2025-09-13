@@ -12,10 +12,6 @@ pub struct Settings {
     pub skip_permission_flags: HashMap<String, String>,
     #[serde(default = "default_env_files")]
     pub env_files: Vec<String>,
-    // When true, prefer opening the web UI instead of attaching in terminal
-    pub web: Option<bool>,
-    // Hostname to use when printing/opening the web UI URL (defaults to "localhost")
-    pub web_host: Option<String>,
 }
 
 impl Default for Settings {
@@ -27,13 +23,13 @@ impl Default for Settings {
         );
         default_flags.insert("gemini".to_string(), "--yolo".to_string());
         default_flags.insert("qwen".to_string(), "--yolo".to_string());
+        // Codex can also require permissive flags in some environments
+        default_flags.insert("codex".to_string(), "--yolo".to_string());
 
         Self {
             auto_remove_minutes: Some(60),
             skip_permission_flags: default_flags,
             env_files: default_env_files(),
-            web: Some(false),
-            web_host: Some("localhost".to_string()),
         }
     }
 }
@@ -49,12 +45,12 @@ fn default_env_files() -> Vec<String> {
 }
 
 fn settings_file_path() -> PathBuf {
-    if let Ok(dir) = env::var("CODESANDBOX_CONFIG_HOME") {
+    if let Ok(dir) = env::var("AGENTSANDBOX_CONFIG_HOME") {
         return PathBuf::from(dir).join("settings.json");
     }
     let home = home::home_dir().unwrap_or_else(|| PathBuf::from("/"));
     home.join(".config")
-        .join("codesandbox")
+        .join("agentsandbox")
         .join("settings.json")
 }
 
@@ -67,4 +63,3 @@ pub fn load_settings() -> Result<Settings> {
     }
     Ok(Settings::default())
 }
-

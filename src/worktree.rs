@@ -13,7 +13,7 @@ pub fn create_worktree(base_dir: &Path, branch: &str) -> Result<PathBuf> {
         anyhow::bail!("Not a git repository");
     }
     let root = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
-    let worktrees_dir = root.join(".codesandbox-worktrees");
+    let worktrees_dir = root.join(".agentsandbox-worktrees");
     fs::create_dir_all(&worktrees_dir).context("Failed to create worktrees directory")?;
     let worktree_path = worktrees_dir.join(branch);
     if !worktree_path.exists() {

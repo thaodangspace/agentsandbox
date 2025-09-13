@@ -9,7 +9,7 @@
 
 ## Build, Test, and Development Commands
 - Build (Rust): `cargo build` (release: `cargo build --release`).
-- Run CLI: `cargo run -- --help` or installed `codesandbox --help`.
+- Run CLI: `cargo run -- --help` or installed `agentsandbox --help`.
 - Test (Rust): `cargo test`.
 - Format/Lint: `cargo fmt --all` and `cargo clippy -- -D warnings`.
 - Web UI: `cd web && npm ci && npm run dev` (build: `npm run build`, preview: `npm run preview`).
@@ -30,5 +30,4 @@
 
 ## Security & Configuration Tips
 - Do not commit secrets or `.env*` files. The CLI masks env files per settings.
-- User config lives at `~/.config/codesandbox/settings.json` (e.g., permission flags, env masks). Verify Docker is running before local tests.
-
+- User config lives at `~/.config/agentsandbox/settings.json` (e.g., permission flags, env masks). Verify Docker is running before local tests.

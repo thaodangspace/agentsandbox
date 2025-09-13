@@ -1,0 +1,13 @@
+# Cross-compilation configuration
+# Note: macOS cross-compilation from Linux requires osxcross toolchain
+# Install instructions: https://github.com/tpoechtrager/osxcross
+
+[target.x86_64-apple-darwin]
+# Uncomment these lines if you have osxcross installed
+# linker = "x86_64-apple-darwin14-clang"
+# ar = "x86_64-apple-darwin14-ar"
+
+[target.aarch64-apple-darwin]
+# Uncomment these lines if you have osxcross installed
+# linker = "aarch64-apple-darwin20.4-clang"
+# ar = "aarch64-apple-darwin20.4-ar"

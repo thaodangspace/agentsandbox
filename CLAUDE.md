@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-codesandbox (Code Sandbox) is a Rust CLI tool that creates isolated Ubuntu Docker containers with Claude Code pre-installed for development work. The tool automatically handles Docker container lifecycle, mounts the current directory as a workspace, and transfers Claude configuration for seamless development.
+agentsandbox (Agent Sandbox) is a Rust CLI tool that creates isolated Ubuntu Docker containers with development agents pre-installed for development work. The tool automatically handles Docker container lifecycle, mounts the current directory as a workspace, and transfers configuration for seamless development.
 
 ## Build and Development Commands
 
@@ -21,7 +21,7 @@ cargo build --release
 cargo install --path .
 
 # Install to system (requires release build first)
-sudo cp target/release/codesandbox /usr/local/bin/
+sudo cp target/release/agentsandbox /usr/local/bin/
 ```
 
 ### Testing and Development
@@ -51,7 +51,7 @@ The codebase is structured into focused modules:
 -   **`cli.rs`**: Command-line interface definition using clap with support for resuming previous containers via `--continue` flag
 -   **`config.rs`**: Claude configuration discovery and management, handling multiple config locations (.claude directory, XDG, local .claude.json files)
 -   **`container.rs`**: Core Docker operations including container creation, lifecycle management, and dynamic Dockerfile generation
--   **`state.rs`**: Persistent state management for tracking the last created container in `~/.config/codesandbox/last_container`
+-   **`state.rs`**: Persistent state management for tracking the last created container in `~/.config/agentsandbox/last_container`
 
 ### Key Design Patterns
 
@@ -78,4 +78,4 @@ Containers are created with:
 
 ## Container Management
 
-The tool generates contextual container names using the format `csb-{agent}-{dir}-{branch}-{yymmddhhmm}` and tracks the last container for resumption. State is persisted in `~/.config/codesandbox/last_container`.
+The tool generates contextual container names using the format `agent-{agent}-{dir}-{branch}-{yymmddhhmm}` and tracks the last container for resumption. State is persisted in `~/.config/agentsandbox/last_container`.
