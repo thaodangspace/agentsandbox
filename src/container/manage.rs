@@ -104,12 +104,12 @@ fn extract_project_name(name: &str) -> String {
     if !name.starts_with("agent-") {
         return "unknown".to_string();
     }
-    
+
     let parts: Vec<&str> = name.split('-').collect();
     if parts.len() < 4 {
         return "unknown".to_string();
     }
-    
+
     // Check if last part is a timestamp (10 digits)
     let timestamp_idx = if let Some(last_part) = parts.last() {
         if last_part.len() == 10 && last_part.chars().all(|c| c.is_ascii_digit()) {
@@ -120,11 +120,11 @@ fn extract_project_name(name: &str) -> String {
     } else {
         None
     };
-    
+
     if let Some(ts_idx) = timestamp_idx {
         // Known agent names
-        let agents = vec!["claude", "gemini", "codex", "qwen", "cursor"];
-        
+        let agents = ["claude", "gemini", "codex", "qwen", "cursor"];
+
         // Find the agent (should be at index 1)
         if parts.len() > 1 {
             let potential_agent = parts[1];
@@ -134,7 +134,7 @@ fn extract_project_name(name: &str) -> String {
                 // Assume the branch is always the part just before timestamp
                 if ts_idx >= 3 {
                     // Project is from index 2 to ts_idx-2 (inclusive)
-                    let project_parts = &parts[2..ts_idx-1];
+                    let project_parts = &parts[2..ts_idx - 1];
                     if !project_parts.is_empty() {
                         return project_parts.join("-");
                     }
@@ -142,7 +142,7 @@ fn extract_project_name(name: &str) -> String {
             }
         }
     }
-    
+
     "unknown".to_string()
 }
 
@@ -165,18 +165,18 @@ fn get_container_directory(name: &str) -> Result<Option<String>> {
     // Look for a project directory that doesn't start with a dot (config/hidden dirs)
     // and prefer directories that don't contain common config path patterns
     let mut candidates: Vec<String> = Vec::new();
-    
+
     for line in paths.lines() {
         let path = line.trim();
         if path.is_empty() {
             continue;
         }
-        
+
         // Skip obvious config directories
         if path.contains("/.claude") || path.contains("/.serena") {
             continue;
         }
-        
+
         // Get the last component of the path to check if it's a hidden directory
         if let Some(last_component) = std::path::Path::new(path).file_name() {
             if let Some(name_str) = last_component.to_str() {
@@ -187,11 +187,11 @@ fn get_container_directory(name: &str) -> Result<Option<String>> {
                 }
             }
         }
-        
+
         // This looks like a regular project directory
         return Ok(Some(path.to_string()));
     }
-    
+
     // If no non-hidden directory found, return the first candidate
     Ok(candidates.into_iter().next())
 }

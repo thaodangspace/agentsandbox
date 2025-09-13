@@ -316,6 +316,70 @@ We welcome contributions to Agent Sandbox! Here's how you can help:
     cargo test
     ```
 
+### Building for Different Platforms
+
+For **local development**, use the provided build script:
+
+```bash
+# Build for native target in debug mode
+./scripts/build.sh
+
+# Build for native target in release mode
+./scripts/build.sh --release
+
+# Show all available options
+./scripts/build.sh --help
+```
+
+For **cross-compilation**:
+
+-   **GitHub Actions**: The repository automatically builds for all platforms (Linux, macOS, Windows) when you push tags or trigger the workflow manually
+-   **Local cross-compilation**:
+    -   Linux builds work natively
+    -   Windows builds require `mingw-w64` toolchain
+    -   macOS builds from Linux require [osxcross](https://github.com/tpoechtrager/osxcross) toolchain
+
+```bash
+# Install Rust targets for cross-compilation
+rustup target add x86_64-pc-windows-gnu
+rustup target add x86_64-apple-darwin
+rustup target add aarch64-apple-darwin
+
+# Cross-compile (requires appropriate toolchain)
+cargo build --release --target x86_64-pc-windows-gnu
+```
+
+**Note**: The `reqwest` dependency has been configured with `rustls-tls` instead of native TLS for better cross-compilation support.
+
+### Building for NPM Distribution
+
+For building binaries ready for npm publishing:
+
+```bash
+# Build for npm distribution (attempts Linux + macOS targets)
+npm run build
+# or
+./scripts/build.sh --npm
+
+# Build individual targets for npm
+npm run build:linux      # Build for Linux x64
+npm run build:macos      # Build for macOS x64
+npm run build:macos-arm  # Build for macOS ARM64
+```
+
+The build script will:
+
+-   Compile in release mode
+-   Copy binaries to `dist/` with npm-compatible naming
+-   Handle missing cross-compilation toolchains gracefully
+
+**Supported platforms for npm distribution:**
+
+-   `linux-x64` → `agentsandbox-linux-x64`
+-   `darwin-x64` → `agentsandbox-darwin-x64`
+-   `darwin-arm64` → `agentsandbox-darwin-arm64`
+-   `win32` → `agentsandbox.exe`
+
 ### Making Changes
 
 -   **Follow Rust conventions**: Use `cargo fmt` and `cargo clippy`

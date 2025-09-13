@@ -1,7 +1,7 @@
 {
   "name": "@thaodangspace/agent-sandbox",
-  "version": "0.1.0",
-  "description": "Agent Sandbox CLI packaged for npm",
+  "version": "0.1.1",
+  "description": "Agent Sandbox CLI - Creates isolated Docker containers with AI development agents",
   "bin": {
     "agentsandbox": "./bin/agentsandbox.js"
   },
@@ -12,7 +12,12 @@
   ],
   "scripts": {
     "postinstall": "node install.js",
-    "test": "node -e \"console.log('No tests')\""
+    "test": "node -e \"console.log('No tests')\"",
+    "build": "./scripts/build.sh --npm",
+    "build:linux": "./scripts/build.sh --target x86_64-unknown-linux-gnu --dist --release",
+    "build:macos": "./scripts/build.sh --target x86_64-apple-darwin --dist --release",
+    "build:macos-arm": "./scripts/build.sh --target aarch64-apple-darwin --dist --release",
+    "prepare": "./scripts/prepare-npm.sh"
   },
   "keywords": [
     "cli",

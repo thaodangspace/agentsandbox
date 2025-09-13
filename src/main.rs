@@ -16,7 +16,7 @@ use anyhow::{Context, Result};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
-use std::process::{Command};
+use std::process::Command;
 
 use cli::{Agent, Cli, Commands};
 use container::{
@@ -24,9 +24,7 @@ use container::{
     generate_container_name, list_all_containers, list_containers, resume_container,
 };
 use settings::load_settings;
-use state::{
-    clear_last_container, load_last_container, save_last_container,
-};
+use state::{clear_last_container, load_last_container, save_last_container};
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
 use worktree::create_worktree;
@@ -288,4 +286,3 @@ async fn main() -> Result<()> {
     save_last_container(&container_name)?;
     Ok(())
 }
-
