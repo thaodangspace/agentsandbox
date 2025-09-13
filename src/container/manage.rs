@@ -14,7 +14,7 @@ pub fn cleanup_containers(current_dir: &Path) -> Result<()> {
     let dir_marker = format!("-{dir_name}-");
 
     let list_output = Command::new("docker")
-        .args(["ps", "-a", "--format", "{{.Names}}"]) 
+        .args(["ps", "-a", "--format", "{{.Names}}"])
         .output()
         .context("Failed to list Docker containers")?;
 
@@ -57,7 +57,7 @@ pub fn list_containers(current_dir: &Path) -> Result<Vec<String>> {
     let dir_marker = format!("-{dir_name}-");
 
     let list_output = Command::new("docker")
-        .args(["ps", "-a", "--format", "{{.Names}}"]) 
+        .args(["ps", "-a", "--format", "{{.Names}}"])
         .output()
         .context("Failed to list Docker containers")?;
 
@@ -79,7 +79,7 @@ pub fn list_containers(current_dir: &Path) -> Result<Vec<String>> {
 
 pub fn list_all_containers() -> Result<Vec<(String, String, Option<String>)>> {
     let list_output = Command::new("docker")
-        .args(["ps", "--format", "{{.Names}}"]) 
+        .args(["ps", "--format", "{{.Names}}"])
         .output()
         .context("Failed to list Docker containers")?;
 
@@ -143,7 +143,7 @@ pub fn auto_remove_old_containers(minutes: u64) -> Result<()> {
     let cutoff = Utc::now() - chrono::Duration::minutes(minutes as i64);
 
     let list_output = Command::new("docker")
-        .args(["ps", "-a", "--format", "{{.Names}}"]) 
+        .args(["ps", "-a", "--format", "{{.Names}}"])
         .output()
         .context("Failed to list Docker containers")?;
 
@@ -200,12 +200,9 @@ pub fn auto_remove_old_containers(minutes: u64) -> Result<()> {
 }
 
 pub fn check_docker_availability() -> Result<()> {
-    let output = Command::new("docker")
-        .arg("--version")
-        .output()
-        .context(
-            "Failed to check Docker availability. Make sure Docker is installed and running.",
-        )?;
+    let output = Command::new("docker").arg("--version").output().context(
+        "Failed to check Docker availability. Make sure Docker is installed and running.",
+    )?;
 
     if !output.status.success() {
         anyhow::bail!("Docker is not available or not running");
