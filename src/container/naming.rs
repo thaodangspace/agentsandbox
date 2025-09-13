@@ -38,5 +38,5 @@ pub fn generate_container_name(current_dir: &Path, agent: &Agent) -> String {
 
     let timestamp = Local::now().format("%y%m%d%H%M").to_string();
 
-    format!("csb-{agent_name}-{dir_name}-{branch_name}-{timestamp}")
+    format!("agent-{agent_name}-{dir_name}-{branch_name}-{timestamp}")
 }

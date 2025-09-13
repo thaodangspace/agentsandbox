@@ -78,4 +78,4 @@ Containers are created with:
 
 ## Container Management
 
-The tool generates contextual container names using the format `csb-{agent}-{dir}-{branch}-{yymmddhhmm}` and tracks the last container for resumption. State is persisted in `~/.config/agentsandbox/last_container`.
+The tool generates contextual container names using the format `agent-{agent}-{dir}-{branch}-{yymmddhhmm}` and tracks the last container for resumption. State is persisted in `~/.config/agentsandbox/last_container`.

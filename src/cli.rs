@@ -71,7 +71,7 @@ impl Agent {
     }
 
     pub fn from_container_name(name: &str) -> Option<Self> {
-        let rest = name.strip_prefix("csb-")?;
+        let rest = name.strip_prefix("agent-")?;
         for agent in [
             Agent::Claude,
             Agent::Gemini,

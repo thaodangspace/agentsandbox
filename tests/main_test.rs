@@ -28,5 +28,5 @@ fn test_generate_container_name_sanitizes_directory() {
 
     let name = container::generate_container_name(&project_dir, &Agent::Claude);
 
-    assert!(name.starts_with("csb-claude-my-project-"));
+    assert!(name.starts_with("agent-claude-my-project-"));
 }

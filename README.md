@@ -49,7 +49,7 @@ Using an isolated container provides critical benefits:
 -   **Automatic Workspace Mounting**: Seamlessly mounts your current directory to same path with the host machine in the container
 -   **Node Modules Isolation**: For Node.js projects, `node_modules` is overlaid with a container-only volume. Existing host `node_modules` are copied to the container on first run to accelerate setup.
 -   **Configuration Management**: Automatically copies and applies your agent configurations
--   **Intelligent Naming**: Generates contextual container names to prevent conflicts (`csb-{agent}-{dir}-{branch}-{yymmddhhmm}`)
+-   **Intelligent Naming**: Generates contextual container names to prevent conflicts (`agent-{agent}-{dir}-{branch}-{yymmddhhmm}`)
 -   **Language Tooling**: Detects common project languages and installs missing package managers like Cargo, npm, pip, Composer, Go, or Bundler
 
 ### Workflow Management
@@ -234,15 +234,15 @@ Additional behavior can be configured via `settings.json` located at
         "qwen": "--yolo",
         "cursor": "--yolo"
     },
-      "env_files": [
-          ".env",
-          ".env.local",
-          ".env.development.local",
-          ".env.test.local",
-          ".env.production.local"
-      ]
-  }
-  ```
+    "env_files": [
+        ".env",
+        ".env.local",
+        ".env.development.local",
+        ".env.test.local",
+        ".env.production.local"
+    ]
+}
+```
 
 The `skip_permission_flags` map assigns a permission-skipping flag to each
 agent. When launching an agent, the corresponding flag is appended to the
