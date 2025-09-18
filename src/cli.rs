@@ -50,7 +50,7 @@ pub enum Commands {
     Cleanup,
 }
 
-#[derive(ValueEnum, Clone, Debug)]
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
 pub enum Agent {
     Claude,
     Gemini,

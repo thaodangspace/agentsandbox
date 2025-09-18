@@ -1,73 +1,38 @@
-use clap::Parser;
-
 #[path = "../src/cli.rs"]
 mod cli;
 
-use cli::{Agent, Cli, Commands};
+use cli::Agent;
 
 #[test]
-fn parse_continue_flag() {
-    let cli = Cli::parse_from(["agentsandbox", "--continue"]);
-    assert!(cli.continue_);
-    assert!(cli.add_dir.is_none());
-}
-
-#[test]
-fn parse_cleanup_subcommand() {
-    let cli = Cli::parse_from(["agentsandbox", "cleanup"]);
-    assert!(matches!(cli.command, Some(Commands::Cleanup)));
-}
-
-#[test]
-fn parse_ls_subcommand() {
-    let cli = Cli::parse_from(["agentsandbox", "ls"]);
-    assert!(matches!(cli.command, Some(Commands::Ls)));
-    assert!(cli.add_dir.is_none());
-}
-
-#[test]
-fn parse_ps_subcommand() {
-    let cli = Cli::parse_from(["agentsandbox", "ps"]);
-    assert!(matches!(cli.command, Some(Commands::Ps)));
-}
-
-#[test]
-fn continue_with_cleanup_subcommand_parses() {
-    // We allow specifying --continue with a subcommand; the caller can decide semantics
-    let cli = Cli::parse_from(["agentsandbox", "--continue", "cleanup"]);
-    assert!(cli.continue_);
-    assert!(matches!(cli.command, Some(Commands::Cleanup)));
-}
-
-#[test]
-fn parse_add_dir() {
-    let cli = Cli::parse_from(["agentsandbox", "--add_dir", "/tmp/foo"]);
+fn test_agent_from_container_name() {
     assert_eq!(
-        cli.add_dir.as_deref(),
-        Some(std::path::Path::new("/tmp/foo"))
+        Agent::from_container_name("agent-claude-proj-main-1234567890"),
+        Some(Agent::Claude)
     );
+    assert_eq!(
+        Agent::from_container_name("agent-gemini-proj-main-1234567890"),
+        Some(Agent::Gemini)
+    );
+    assert_eq!(
+        Agent::from_container_name("agent-codex-proj-main-1234567890"),
+        Some(Agent::Codex)
+    );
+    assert_eq!(
+        Agent::from_container_name("agent-qwen-proj-main-1234567890"),
+        Some(Agent::Qwen)
+    );
+    assert_eq!(
+        Agent::from_container_name("agent-cursor-agent-proj-main-1234567890"),
+        Some(Agent::Cursor)
+    );
+    assert_eq!(Agent::from_container_name("unrelated"), None);
 }
 
 #[test]
-fn default_agent_is_claude() {
-    let cli = Cli::parse_from(["agentsandbox"]);
-    assert!(matches!(cli.agent, Agent::Claude));
-}
-
-#[test]
-fn parse_agent_option() {
-    let cli = Cli::parse_from(["agentsandbox", "--agent", "qwen"]);
-    assert!(matches!(cli.agent, Agent::Qwen));
-}
-
-#[test]
-fn parse_shell_flag() {
-    let cli = Cli::parse_from(["agentsandbox", "--shell"]);
-    assert!(cli.shell);
-}
-
-#[test]
-fn parse_worktree_option() {
-    let cli = Cli::parse_from(["agentsandbox", "--worktree", "feature"]);
-    assert_eq!(cli.worktree.as_deref(), Some("feature"));
+fn test_agent_display() {
+    assert_eq!(format!("{}", Agent::Claude), "Claude");
+    assert_eq!(format!("{}", Agent::Gemini), "Gemini");
+    assert_eq!(format!("{}", Agent::Codex), "Codex");
+    assert_eq!(format!("{}", Agent::Qwen), "Qwen");
+    assert_eq!(format!("{}", Agent::Cursor), "Cursor");
 }

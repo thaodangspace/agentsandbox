@@ -17,7 +17,7 @@ mod state;
 mod container;
 
 use cli::Agent;
-use container::{auto_remove_old_containers, generate_container_name};
+use container::{auto_remove_old_containers, cleanup_containers, generate_container_name};
 use std::{env, fs, process::Command, sync::Mutex};
 use tempfile::tempdir;
 
@@ -93,7 +93,7 @@ fn test_auto_remove_old_containers() {
     let rm_log = bin_dir.join("rm.log");
 
     let docker_path = bin_dir.join("docker");
-    let script = r#"#!/bin/bash
+    let script = r###"#!/bin/bash
 set -e
 cmd="$1"
 shift
@@ -101,32 +101,27 @@ case "$cmd" in
   ps)
     echo "agent-old"
     echo "agent-recent"
-    ;;
-  inspect)
+    ;;  inspect)
     name="${!#}"
     if [ "$name" = "agent-old" ]; then
       echo "1970-01-01T00:00:00Z"
     else
       date -u +"%Y-%m-%dT%H:%M:%SZ"
     fi
-    ;;
-  logs)
+    ;;  logs)
     name="${!#}"
     if [ "$name" = "agent-old" ]; then
       :
     else
       echo "has logs"
     fi
-    ;;
-  rm)
+    ;;  rm)
     name="${!#}"
     echo "$name" >> "__LOG__"
-    ;;
-  *)
+    ;;  *)
     exit 1
-    ;;
-esac
-"#
+    ;;esac
+"###
     .replace("__LOG__", rm_log.to_str().unwrap());
     fs::write(&docker_path, script).unwrap();
     #[cfg(unix)]
@@ -154,25 +149,22 @@ fn test_list_all_containers() {
     let tmp = tempdir().expect("temp dir");
     let bin_dir = tmp.path();
     let docker_path = bin_dir.join("docker");
-    let script = r#"#!/bin/bash
+    let script = r###"#!/bin/bash
 cmd="$1"
 shift
 case "$cmd" in
   ps)
-    echo "agent-claude-proj-main-123456"
+    echo "agent-claude-proj-main-1234567890"
     echo "unrelated"
-    ;;
-  inspect)
+    ;;  inspect)
     name="${!#}"
-    if [ "$name" = "agent-claude-proj-main-123456" ]; then
+    if [ "$name" = "agent-claude-proj-main-1234567890" ]; then
       echo "/projects/proj"
     fi
-    ;;
-  *)
+    ;;  *)
     exit 1
-    ;;
-esac
-"#;
+    ;;esac
+"###;
     fs::write(&docker_path, script).unwrap();
     #[cfg(unix)]
     {
@@ -191,7 +183,7 @@ esac
 
     assert_eq!(containers.len(), 1);
     assert_eq!(containers[0].0, "proj");
-    assert_eq!(containers[0].1, "agent-claude-proj-main-123456");
+    assert_eq!(containers[0].1, "agent-claude-proj-main-1234567890");
     assert_eq!(containers[0].2.as_deref(), Some("/projects/proj"));
 }
 
@@ -206,8 +198,7 @@ async fn create_container_masks_only_existing_env_files() {
     let bin_dir = tmp.path().join("bin");
     fs::create_dir(&bin_dir).unwrap();
     let run_log = tmp.path().join("run.log");
-    let script = format!(
-        "#!/bin/bash\ncmd=\"$1\"; shift\ncase \"$cmd\" in\n  build) exit 0 ;;\n  run) echo \"$@\" > \"{}\"; exit 0 ;;\n  exec) exit 0 ;;\n  *) exit 0 ;;\nesac\n",
+    let script = format!("#!/bin/bash\ncmd=\"$$1\"; shift\ncase \"$$cmd\" in\n  build) exit 0 ;;  run) echo \"$$@\" > \"{}\"; exit 0 ;;  exec) exit 0 ;;  *) exit 0 ;;esac\n",
         run_log.display()
     );
     let docker_path = bin_dir.join("docker");
@@ -220,6 +211,7 @@ async fn create_container_masks_only_existing_env_files() {
         fs::set_permissions(&docker_path, perms).unwrap();
     }
 
+    let _lock = DOCKER_LOCK.lock().unwrap();
     let original_path = env::var("PATH").unwrap_or_default();
     env::set_var("PATH", format!("{}:{}", bin_dir.display(), original_path));
 
@@ -282,17 +274,12 @@ async fn create_container_isolates_node_modules_and_copies_from_host() {
     let run_log = tmp.path().join("run_node.log");
     let exec_log = tmp.path().join("exec_node.log");
     let cp_log = tmp.path().join("cp_node.log");
-    let script = r#"#!/bin/bash
+    let script = r###"#!/bin/bash
 set -e
 cmd="$1"; shift
 case "$cmd" in
-  build) exit 0 ;;
-  run) echo "$@" > "__RUN__"; exit 0 ;;
-  exec) echo "$@" >> "__EXEC__"; exit 0 ;;
-  cp) echo "$@" >> "__CP__"; exit 0 ;;
-  *) exit 0 ;;
-esac
-"#
+  build) exit 0 ;;  run) echo "$@" > "__RUN__"; exit 0 ;;  exec) echo "$@" >> "__EXEC__"; exit 0 ;;  cp) echo "$@" >> "__CP__"; exit 0 ;;  *) exit 0 ;;esac
+"###
     .replace("__RUN__", run_log.to_str().unwrap())
     .replace("__EXEC__", exec_log.to_str().unwrap())
     .replace("__CP__", cp_log.to_str().unwrap());
@@ -306,6 +293,7 @@ esac
         fs::set_permissions(&docker_path, perms).unwrap();
     }
 
+    let _lock = DOCKER_LOCK.lock().unwrap();
     let original_path = env::var("PATH").unwrap_or_default();
     env::set_var("PATH", format!("{}:{}", bin_dir.display(), original_path));
 
@@ -336,4 +324,50 @@ esac
     let cp_args = fs::read_to_string(&cp_log).unwrap();
     let expected_dest = format!("test-node:{}", project_dir.join("node_modules").display());
     assert!(cp_args.contains(&expected_dest));
+}
+
+#[test]
+fn test_cleanup_containers() {
+    let _lock = DOCKER_LOCK.lock().unwrap();
+    let tmp = tempdir().expect("temp dir");
+    let bin_dir = tmp.path();
+    let rm_log = bin_dir.join("rm.log");
+
+    let docker_path = bin_dir.join("docker");
+    let script = r###"#!/bin/bash
+set -e
+cmd="$1"
+shift
+case "$cmd" in
+  ps)
+    echo "agent-claude-proj-main-1234567890"
+    echo "agent-claude-another-main-1234567890"
+    echo "unrelated"
+    ;;  rm)
+    name="${!#}"
+    echo "$name" >> "__LOG__"
+    ;;  *)
+    exit 1
+    ;;esac
+"###.replace("__LOG__", rm_log.to_str().unwrap());
+    fs::write(&docker_path, script).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&docker_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&docker_path, perms).unwrap();
+    }
+
+    let original_path = env::var("PATH").unwrap_or_default();
+    env::set_var("PATH", format!("{}:{}", bin_dir.display(), original_path));
+
+    let project_dir = tmp.path().join("proj");
+    fs::create_dir(&project_dir).expect("create project dir");
+    cleanup_containers(&project_dir).unwrap();
+
+    env::set_var("PATH", original_path);
+
+    let removed = fs::read_to_string(&rm_log).unwrap();
+    assert_eq!(removed.trim(), "agent-claude-proj-main-1234567890");
 }
