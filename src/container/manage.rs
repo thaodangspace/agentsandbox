@@ -169,16 +169,14 @@ fn extract_project_name(name: &str) -> String {
         return "unknown".to_string();
     }
 
-    // Check if last part is a timestamp (10 digits)
-    let timestamp_idx = if let Some(last_part) = parts.last() {
-        if last_part.len() == 10 && last_part.chars().all(|c| c.is_ascii_digit()) {
+    // Check if last part looks like a timestamp (numeric)
+    let timestamp_idx = parts.last().and_then(|last_part| {
+        if last_part.chars().all(|c| c.is_ascii_digit()) && last_part.len() >= 6 {
             Some(parts.len() - 1)
         } else {
             None
         }
-    } else {
-        None
-    };
+    });
 
     if let Some(ts_idx) = timestamp_idx {
         // Known agent names
