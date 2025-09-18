@@ -10,3 +10,5 @@ target/
 .env.production.local
 web/node_modules/
 .serena/logs/**
+-
+._.DS_Store

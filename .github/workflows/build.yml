@@ -1,0 +1,98 @@
+name: Build Binaries
+
+on:
+    push:
+        tags:
+            - 'v*'
+    workflow_dispatch:
+
+jobs:
+    build:
+        runs-on: ${{ matrix.os }}
+        strategy:
+            matrix:
+                include:
+                    - os: ubuntu-latest
+                      target: x86_64-unknown-linux-gnu
+                      binary: agentsandbox-linux-x64
+                    - os: macos-latest
+                      target: x86_64-apple-darwin
+                      binary: agentsandbox-darwin-x64
+                    - os: macos-latest
+                      target: aarch64-apple-darwin
+                      binary: agentsandbox-darwin-arm64
+                    - os: windows-latest
+                      target: x86_64-pc-windows-msvc
+                      binary: agentsandbox.exe
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: ${{ matrix.target }}
+
+            - name: Build binary
+              run: cargo build --release --target ${{ matrix.target }}
+
+            - name: Rename binary (Unix)
+              if: matrix.os != 'windows-latest'
+              run: |
+                  mkdir -p dist
+                  cp target/${{ matrix.target }}/release/agentsandbox dist/${{ matrix.binary }}
+
+            - name: Rename binary (Windows)
+              if: matrix.os == 'windows-latest'
+              run: |
+                  mkdir dist
+                  copy target\${{ matrix.target }}\release\agentsandbox.exe dist\agentsandbox.exe
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ matrix.binary }}
+                  path: dist/${{ matrix.binary }}
+
+    # Job to collect all binaries and prepare npm package
+    npm-package:
+        needs: build
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Download all artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  path: artifacts
+
+            - name: Prepare npm package
+              run: |
+                  mkdir -p dist
+
+                  # Copy all binaries to dist with correct names
+                  cp artifacts/agentsandbox-linux-x64/agentsandbox-linux-x64 dist/
+                  cp artifacts/agentsandbox-darwin-x64/agentsandbox-darwin-x64 dist/
+                  cp artifacts/agentsandbox-darwin-arm64/agentsandbox-darwin-arm64 dist/
+                  # Note: Windows binary would be agentsandbox.exe if building for Windows
+
+                  # Make binaries executable
+                  chmod +x dist/*
+
+                  # Show what we have
+                  ls -la dist/
+
+                  # Verify binaries work
+                  ./dist/agentsandbox-linux-x64 --version || echo "Linux binary check failed"
+
+            - name: Upload npm package artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: npm-package
+                  path: |
+                      dist/
+                      bin/
+                      install.js
+                      package.json
+                      NPM_PUBLISHING.md
+                  retention-days: 30

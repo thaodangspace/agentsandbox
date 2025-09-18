@@ -14,7 +14,7 @@ pub fn cleanup_containers(current_dir: &Path) -> Result<()> {
     let dir_marker = format!("-{dir_name}-");
 
     let list_output = Command::new("docker")
-        .args(["ps", "-a", "--format", "{{.Names}}"]) 
+        .args(["ps", "-a", "--format", "{{.Names}}"])
         .output()
         .context("Failed to list Docker containers")?;
 
@@ -28,7 +28,7 @@ pub fn cleanup_containers(current_dir: &Path) -> Result<()> {
     let names = String::from_utf8_lossy(&list_output.stdout);
     for name in names
         .lines()
-        .filter(|n| n.starts_with("csb-") && n.contains(&dir_marker))
+        .filter(|n| n.starts_with("agent-") && n.contains(&dir_marker))
     {
         println!("Removing container {name}");
         let rm_output = Command::new("docker")
@@ -57,7 +57,7 @@ pub fn list_containers(current_dir: &Path) -> Result<Vec<String>> {
     let dir_marker = format!("-{dir_name}-");
 
     let list_output = Command::new("docker")
-        .args(["ps", "-a", "--format", "{{.Names}}"]) 
+        .args(["ps", "-a", "--format", "{{.Names}}"])
         .output()
         .context("Failed to list Docker containers")?;
 
@@ -71,7 +71,7 @@ pub fn list_containers(current_dir: &Path) -> Result<Vec<String>> {
     let names = String::from_utf8_lossy(&list_output.stdout);
     let containers = names
         .lines()
-        .filter(|n| n.starts_with("csb-") && n.contains(&dir_marker))
+        .filter(|n| n.starts_with("agent-") && n.contains(&dir_marker))
         .map(|s| s.to_string())
         .collect();
     Ok(containers)
@@ -79,7 +79,7 @@ pub fn list_containers(current_dir: &Path) -> Result<Vec<String>> {
 
 pub fn list_all_containers() -> Result<Vec<(String, String, Option<String>)>> {
     let list_output = Command::new("docker")
-        .args(["ps", "--format", "{{.Names}}"]) 
+        .args(["ps", "--format", "{{.Names}}"])
         .output()
         .context("Failed to list Docker containers")?;
 
@@ -92,7 +92,7 @@ pub fn list_all_containers() -> Result<Vec<(String, String, Option<String>)>> {
 
     let names = String::from_utf8_lossy(&list_output.stdout);
     let mut containers = Vec::new();
-    for name in names.lines().filter(|n| n.starts_with("csb-")) {
+    for name in names.lines().filter(|n| n.starts_with("agent-")) {
         let project = extract_project_name(name);
         let path = get_container_directory(name).ok().flatten();
         containers.push((project, name.to_string(), path));
@@ -101,16 +101,51 @@ pub fn list_all_containers() -> Result<Vec<(String, String, Option<String>)>> {
 }
 
 fn extract_project_name(name: &str) -> String {
-    let parts: Vec<&str> = name.split('-').collect();
-    if parts.len() >= 3 {
-        parts[2].to_string()
-    } else {
-        "unknown".to_string()
+    if !name.starts_with("agent-") {
+        return "unknown".to_string();
     }
+
+    let parts: Vec<&str> = name.split('-').collect();
+    if parts.len() < 4 {
+        return "unknown".to_string();
+    }
+
+    // Check if last part looks like a timestamp (numeric)
+    let timestamp_idx = parts.last().and_then(|last_part| {
+        if last_part.chars().all(|c| c.is_ascii_digit()) && last_part.len() >= 6 {
+            Some(parts.len() - 1)
+        } else {
+            None
+        }
+    });
+
+    if let Some(ts_idx) = timestamp_idx {
+        // Known agent names
+        let agents = ["claude", "gemini", "codex", "qwen", "cursor"];
+
+        // Find the agent (should be at index 1)
+        if parts.len() > 1 {
+            let potential_agent = parts[1];
+            if agents.contains(&potential_agent) {
+                // Agent is at index 1, timestamp at ts_idx
+                // Everything between index 2 and ts_idx-1 (inclusive) is project + branch
+                // Assume the branch is always the part just before timestamp
+                if ts_idx >= 3 {
+                    // Project is from index 2 to ts_idx-2 (inclusive)
+                    let project_parts = &parts[2..ts_idx - 1];
+                    if !project_parts.is_empty() {
+                        return project_parts.join("-");
+                    }
+                }
+            }
+        }
+    }
+
+    "unknown".to_string()
 }
 
 fn get_container_directory(name: &str) -> Result<Option<String>> {
-    // First try to get the main project mount (where source equals destination and is read-write)
+    // Get all mounts where source equals destination and is read-write
     let output = Command::new("docker")
         .args([
             "inspect",
@@ -125,14 +160,38 @@ fn get_container_directory(name: &str) -> Result<Option<String>> {
     }
     let paths = String::from_utf8_lossy(&output.stdout);
 
-    // Filter out config directories and get the first valid project path
+    // Look for a project directory that doesn't start with a dot (config/hidden dirs)
+    // and prefer directories that don't contain common config path patterns
+    let mut candidates: Vec<String> = Vec::new();
+
     for line in paths.lines() {
         let path = line.trim();
-        if !path.is_empty() && !path.contains("/.claude") && !path.contains("/.serena") {
-            return Ok(Some(path.to_string()));
+        if path.is_empty() {
+            continue;
         }
+
+        // Skip obvious config directories
+        if path.contains("/.claude") || path.contains("/.serena") {
+            continue;
+        }
+
+        // Get the last component of the path to check if it's a hidden directory
+        if let Some(last_component) = std::path::Path::new(path).file_name() {
+            if let Some(name_str) = last_component.to_str() {
+                if name_str.starts_with('.') {
+                    // This is a hidden directory, likely a config dir, but keep as backup
+                    candidates.push(path.to_string());
+                    continue;
+                }
+            }
+        }
+
+        // This looks like a regular project directory
+        return Ok(Some(path.to_string()));
     }
-    Ok(None)
+
+    // If no non-hidden directory found, return the first candidate
+    Ok(candidates.into_iter().next())
 }
 
 pub fn auto_remove_old_containers(minutes: u64) -> Result<()> {
@@ -143,7 +202,7 @@ pub fn auto_remove_old_containers(minutes: u64) -> Result<()> {
     let cutoff = Utc::now() - chrono::Duration::minutes(minutes as i64);
 
     let list_output = Command::new("docker")
-        .args(["ps", "-a", "--format", "{{.Names}}"]) 
+        .args(["ps", "-a", "--format", "{{.Names}}"])
         .output()
         .context("Failed to list Docker containers")?;
 
@@ -155,7 +214,7 @@ pub fn auto_remove_old_containers(minutes: u64) -> Result<()> {
     }
 
     let names = String::from_utf8_lossy(&list_output.stdout);
-    for name in names.lines().filter(|n| n.starts_with("csb-")) {
+    for name in names.lines().filter(|n| n.starts_with("agent-")) {
         let inspect_output = Command::new("docker")
             .args(["inspect", "-f", "{{.Created}}", name])
             .output()
@@ -200,12 +259,9 @@ pub fn auto_remove_old_containers(minutes: u64) -> Result<()> {
 }
 
 pub fn check_docker_availability() -> Result<()> {
-    let output = Command::new("docker")
-        .arg("--version")
-        .output()
-        .context(
-            "Failed to check Docker availability. Make sure Docker is installed and running.",
-        )?;
+    let output = Command::new("docker").arg("--version").output().context(
+        "Failed to check Docker availability. Make sure Docker is installed and running.",
+    )?;
 
     if !output.status.success() {
         anyhow::bail!("Docker is not available or not running");

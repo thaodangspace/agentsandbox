@@ -258,4 +258,3 @@ fn test_path_ordering() {
     }
     env::set_current_dir(original_dir).unwrap();
 }
-

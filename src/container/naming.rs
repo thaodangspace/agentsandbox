@@ -7,7 +7,13 @@ use crate::cli::Agent;
 pub(crate) fn sanitize(name: &str) -> String {
     name.to_lowercase()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect()
 }
 
@@ -32,5 +38,5 @@ pub fn generate_container_name(current_dir: &Path, agent: &Agent) -> String {
 
     let timestamp = Local::now().format("%y%m%d%H%M").to_string();
 
-    format!("csb-{agent_name}-{dir_name}-{branch_name}-{timestamp}")
+    format!("agent-{agent_name}-{dir_name}-{branch_name}-{timestamp}")
 }

@@ -1,4 +1,5 @@
-const fs = require('fs');
+#!/usr/bin/env node
+const { spawn } = require('child_process');
 const path = require('path');
 const os = require('os');
 
@@ -20,16 +21,11 @@ if (platform === 'win32') {
     process.exit(1);
 }
 
-const binPath = path.join(__dirname, 'dist', binName);
+const binPath = path.join(__dirname, '..', 'dist', binName);
 
-// Check if binary exists
-if (!fs.existsSync(binPath)) {
-    console.error(`Pre-built binary not found: ${binPath}`);
-    console.error('This package should include pre-built binaries.');
-    process.exit(1);
-}
+const args = process.argv.slice(2);
+const child = spawn(binPath, args, { stdio: 'inherit' });
 
-// Ensure binary is executable on Unix-like systems
-if (platform !== 'win32') {
-    fs.chmodSync(binPath, 0o755);
-}
+child.on('close', (code) => {
+    process.exit(code);
+});

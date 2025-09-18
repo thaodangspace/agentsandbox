@@ -1,11 +1,11 @@
-# Code Sandbox
+# Agent Sandbox
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/your-repo/code-sandbox)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust Version](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://www.docker.com)
 
-A robust Rust CLI tool that creates isolated Ubuntu Docker containers with development agents pre-installed. Code Sandbox provides a secure, disposable environment for running AI assistants like Claude, Gemini, Codex, and Qwen, ensuring their actions are confined to the container while maintaining a clean, reproducible workspace.
+A robust Rust CLI tool that creates isolated Ubuntu Docker containers with development agents pre-installed. Agent Sandbox provides a secure, disposable environment for running AI assistants like Claude, Gemini, Codex, Qwen, and Cursor, ensuring their actions are confined to the container while maintaining a clean, reproducible workspace.
 
 ## Table of Contents
 
@@ -25,14 +25,17 @@ A robust Rust CLI tool that creates isolated Ubuntu Docker containers with devel
 
 ### Why Sandbox an AI Agent?
 
-Running an agent inside an isolated container provides several benefits:
+Running an AI agent with direct access to your host machine is risky. An agent could inadvertently or maliciously:
 
--   Protects your host machine by keeping the agent's file system changes and
-    processes separate from your environment
--   Ensures a clean, reproducible workspace with all dependencies installed
-    from scratch
--   Makes it easy to experiment with untrusted code or dependencies and then
-    discard the container when finished
+-   Install dangerous packages (`npm install some-malware`)
+-   Execute destructive commands (`rm -rf /`, `pkill`)
+-   Run sensitive operations (`git push --force`, `db:migrate`)
+
+Using an isolated container provides critical benefits:
+
+-   **Security**: Protects your host machine by keeping the agent's file system changes and processes separate from your environment.
+-   **Integrity**: Ensures a clean, reproducible workspace with all dependencies installed from scratch.
+-   **Flexibility**: Makes it easy to experiment with untrusted code or dependencies and then discard the container when finished.
 
 ## Demo
 
@@ -42,16 +45,17 @@ Running an agent inside an isolated container provides several benefits:
 
 ### Core Functionality
 
--   **Multi-Agent Support**: Compatible with Claude, Gemini, Codex, and Qwen development agents
+-   **Multi-Agent Support**: Compatible with Claude, Gemini, Codex, Qwen, and Cursor development agents
 -   **Automatic Workspace Mounting**: Seamlessly mounts your current directory to same path with the host machine in the container
--   **Node Modules Isolation**: For Node.js projects, `node_modules` is overlaid with a container-only volume and dependencies are installed inside the container to avoid affecting the host
+-   **Node Modules Isolation**: For Node.js projects, `node_modules` is overlaid with a container-only volume. Existing host `node_modules` are copied to the container on first run to accelerate setup.
 -   **Configuration Management**: Automatically copies and applies your agent configurations
--   **Intelligent Naming**: Generates contextual container names to prevent conflicts (`csb-{agent}-{dir}-{branch}-{yymmddhhmm}`)
+-   **Intelligent Naming**: Generates contextual container names to prevent conflicts (`agent-{agent}-{dir}-{branch}-{yymmddhhmm}`)
 -   **Language Tooling**: Detects common project languages and installs missing package managers like Cargo, npm, pip, Composer, Go, or Bundler
 
 ### Workflow Management
 
--   **Session Continuity**: Resume your last container session with `codesandbox --continue`
+-   **Session Continuity**: Resume your last container session with `agentsandbox --continue`
+-   **Global Container Listing**: List all running sandbox containers across all projects with `agentsandbox ps`
 -   **Git Integration**: Create and use git worktrees for isolated branch development
 -   **Cleanup Utilities**: Efficient container management and cleanup tools
 -   **Directory Mounting**: Add additional read-only directories for extended workspace access
@@ -76,10 +80,10 @@ Running an agent inside an isolated container provides several benefits:
 
 ```bash
 # Add the tap (replace with actual repository URL)
-brew tap your-username/codesandbox
+brew tap your-username/agentsandbox
 
-# Install codesandbox
-brew install codesandbox
+# Install agentsandbox
+brew install agentsandbox
 ```
 
 ### Method 2: Build from Source
@@ -93,7 +97,7 @@ cd code-sandbox
 cargo build --release
 
 # Install globally (optional)
-sudo cp target/release/codesandbox /usr/local/bin/
+sudo cp target/release/agentsandbox /usr/local/bin/
 ```
 
 ### Method 3: Install via Cargo
@@ -103,7 +107,7 @@ sudo cp target/release/codesandbox /usr/local/bin/
 cargo install --path .
 
 # Or install from crates.io (when published)
-cargo install codesandbox
+cargo install agentsandbox
 ```
 
 ### Method 4: Download Pre-built Binaries
@@ -113,10 +117,10 @@ Visit the [Releases](https://github.com/your-org/code-sandbox/releases) page to 
 ### Method 5: Install via npm
 
 ```bash
-npm install -g @thaodangspace/code-sandbox
+npm install -g @thaodangspace/agent-sandbox
 ```
 
-This compiles the CLI using Rust and exposes a `codesandbox` command via npm.
+This compiles the CLI using Rust and exposes a `agentsandbox` command via npm.
 
 ## Usage
 
@@ -125,7 +129,7 @@ This compiles the CLI using Rust and exposes a `codesandbox` command via npm.
 Navigate to your project directory and run:
 
 ```bash
-codesandbox
+agentsandbox
 ```
 
 This command will:
@@ -141,53 +145,41 @@ This command will:
 
 ```bash
 # Use Qwen instead of Claude
-codesandbox --agent qwen
+agentsandbox --agent qwen
 
 # Use Gemini
-codesandbox --agent gemini
+agentsandbox --agent gemini
+
+# Use Cursor
+agentsandbox --agent cursor
 ```
 
 #### Mount Additional Directories
 
 ```bash
 # Add a read-only reference directory
-codesandbox --add_dir /path/to/reference/repo
+agentsandbox --add_dir /path/to/reference/repo
 ```
 
 #### Session Management
 
 ```bash
 # Resume the last container from this directory
-codesandbox --continue
+agentsandbox --continue
 
-# List all containers and optionally attach
-codesandbox ls
+# List containers for the current directory and optionally attach
+agentsandbox ls
+
+# List all running containers across all projects
+agentsandbox ps
 ```
 
 #### Git Workflow Integration
 
 ```bash
 # Create and use a git worktree for isolated branch work
-codesandbox --worktree feature-branch
+agentsandbox --worktree feature-branch
 ```
-
-### Web UI Mode
-
-To open the browser-based terminal instead of attaching in your CLI:
-
-```bash
-codesandbox --web
-```
-
-Set it as the default via `~/.config/codesandbox/settings.json`:
-
-```json
-{
-  "web": true
-}
-```
-
-When web mode is enabled, codesandbox will start the local server if needed, open `http://<host>:6789` (default `localhost`, configurable via `web_host` in settings), and auto-run your selected agent in the browser terminal.
 
 ## Connecting to the Container
 
@@ -197,56 +189,23 @@ After the container is created, you can connect to it using:
 docker exec -it <container-name> /bin/bash
 ```
 
-The container name will be displayed when `codesandbox` runs.
+The container name will be displayed when `agentsandbox` runs.
 
 ## Listing Existing Containers
 
-List all sandbox containers created from the current directory and optionally attach to one:
+List all sandbox containers created from the **current directory** and optionally attach to one:
 
 ```bash
-codesandbox ls
+agentsandbox ls
 ```
 
-You will be shown a numbered list of containers. Enter a number to attach or press Enter to cancel.
-
-## API
-
-### REST API for Container Changes
-
-This repository includes an optional HTTP server that reports file changes inside a running sandbox container.
-
-Start the server:
+To list all running sandbox containers across all directories, use:
 
 ```bash
-codesandbox serve
+agentsandbox ps
 ```
 
-Run it as a background daemon:
-
-```bash
-codesandbox serve -d
-```
-
-Stop the server:
-
-```bash
-codesandbox stop
-```
-
-Restart the server (optionally in the background):
-
-```bash
-codesandbox restart
-codesandbox restart -d
-```
-
-The server listens on port 6789. Query the changes for a specific container:
-
-```bash
-curl http://localhost:6789/api/changed/<container-name>
-```
-
-The response lists changed files along with their git status and diff contents.
+This view also allows you to `cd` directly into the project directory associated with a container.
 
 ### Container Contents
 
@@ -264,19 +223,24 @@ The tool automatically detects and mounts your Claude configuration from:
 -   `$XDG_CONFIG_HOME/claude` (XDG standard)
 
 Additional behavior can be configured via `settings.json` located at
-`~/.config/codesandbox/settings.json`. Example:
+`~/.config/agentsandbox/settings.json`. Example:
 
 ```json
 {
-    "auto_remove_minutes": 30,
+    "auto_remove_minutes": 60,
     "skip_permission_flags": {
         "claude": "--dangerously-skip-permissions",
         "gemini": "--yolo",
-        "qwen": "--yolo"
+        "qwen": "--yolo",
+        "cursor": "--yolo"
     },
-    "env_files": [".env", ".env.local"],
-    "web": true,
-    "web_host": "my.devbox.local"
+    "env_files": [
+        ".env",
+        ".env.local",
+        ".env.development.local",
+        ".env.test.local",
+        ".env.production.local"
+    ]
 }
 ```
 
@@ -293,7 +257,7 @@ keeping sensitive data on the host.
 To start a container without launching an agent and open a shell:
 
 ```bash
-codesandbox --shell
+agentsandbox --shell
 ```
 
 ## Cleanup
@@ -301,13 +265,13 @@ codesandbox --shell
 To remove all containers created from the current directory:
 
 ```bash
-codesandbox --cleanup
+agentsandbox cleanup
 ```
 
 To remove the built image:
 
 ```bash
-docker rmi codesandbox-image
+docker rmi agentsandbox-image
 ```
 
 ## Troubleshooting
@@ -318,7 +282,7 @@ docker rmi codesandbox-image
 
 ## Contributing
 
-We welcome contributions to Code Sandbox! Here's how you can help:
+We welcome contributions to Agent Sandbox! Here's how you can help:
 
 ### Getting Started
 
@@ -351,6 +315,70 @@ We welcome contributions to Code Sandbox! Here's how you can help:
     ```bash
     cargo test
     ```
+
+### Building for Different Platforms
+
+For **local development**, use the provided build script:
+
+```bash
+# Build for native target in debug mode
+./scripts/build.sh
+
+# Build for native target in release mode
+./scripts/build.sh --release
+
+# Show all available options
+./scripts/build.sh --help
+```
+
+For **cross-compilation**:
+
+-   **GitHub Actions**: The repository automatically builds for all platforms (Linux, macOS, Windows) when you push tags or trigger the workflow manually
+-   **Local cross-compilation**:
+    -   Linux builds work natively
+    -   Windows builds require `mingw-w64` toolchain
+    -   macOS builds from Linux require [osxcross](https://github.com/tpoechtrager/osxcross) toolchain
+
+```bash
+# Install Rust targets for cross-compilation
+rustup target add x86_64-pc-windows-gnu
+rustup target add x86_64-apple-darwin
+rustup target add aarch64-apple-darwin
+
+# Cross-compile (requires appropriate toolchain)
+cargo build --release --target x86_64-pc-windows-gnu
+```
+
+**Note**: The `reqwest` dependency has been configured with `rustls-tls` instead of native TLS for better cross-compilation support.
+
+### Building for NPM Distribution
+
+For building binaries ready for npm publishing:
+
+```bash
+# Build for npm distribution (attempts Linux + macOS targets)
+npm run build
+# or
+./scripts/build.sh --npm
+
+# Build individual targets for npm
+npm run build:linux      # Build for Linux x64
+npm run build:macos      # Build for macOS x64
+npm run build:macos-arm  # Build for macOS ARM64
+```
+
+The build script will:
+
+-   Compile in release mode
+-   Copy binaries to `dist/` with npm-compatible naming
+-   Handle missing cross-compilation toolchains gracefully
+
+**Supported platforms for npm distribution:**
+
+-   `linux-x64` → `agentsandbox-linux-x64`
+-   `darwin-x64` → `agentsandbox-darwin-x64`
+-   `darwin-arm64` → `agentsandbox-darwin-arm64`
+-   `win32` → `agentsandbox.exe`
 
 ### Making Changes
 
@@ -398,7 +426,7 @@ For new features:
 -   Propose the API/interface if applicable
 -   Consider backward compatibility
 
-Thank you for contributing to Code Sandbox!
+Thank you for contributing to Agent Sandbox!
 
 ## License
 
@@ -414,4 +442,4 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ---
 
-**Made with ❤️ by the Code Sandbox contributors**
+**Made with ❤️ by the Agent Sandbox contributors**

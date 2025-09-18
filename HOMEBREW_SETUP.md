@@ -1,10 +1,10 @@
 # Homebrew Setup Guide
 
-This guide explains how to set up and maintain a Homebrew tap for distributing codesandbox.
+This guide explains how to set up and maintain a Homebrew tap for distributing agentsandbox.
 
 ## What You'll Need
 
-1. A GitHub repository for your Homebrew tap (e.g., `homebrew-codesandbox`)
+1. A GitHub repository for your Homebrew tap (e.g., `homebrew-agentsandbox`)
 2. Tagged releases of your project
 3. SHA256 checksums for your release archives
 
@@ -13,19 +13,19 @@ This guide explains how to set up and maintain a Homebrew tap for distributing c
 ### Step 1: Create a Homebrew Tap Repository
 
 Create a new GitHub repository with the naming convention `homebrew-<name>`. For example:
-- `homebrew-codesandbox`
+- `homebrew-agentsandbox`
 
 ### Step 2: Add the Formula to Your Tap
 
-1. Copy the `codesandbox.rb` file from this repository to your tap repository
+1. Copy the `agentsandbox.rb` file from this repository to your tap repository
 2. Place it in the `Formula/` directory (create if it doesn't exist)
 3. Update the formula with the correct details:
 
 ```ruby
 class Codesandbox < Formula
   desc "Create isolated Ubuntu Docker containers with Claude Code pre-installed"
-  homepage "https://github.com/your-username/codesandbox"
-  url "https://github.com/your-username/codesandbox/archive/refs/tags/v0.1.0.tar.gz"
+  homepage "https://github.com/your-username/agentsandbox"
+  url "https://github.com/your-username/agentsandbox/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "YOUR_SHA256_HERE"  # Generate this from the release archive
   license "MIT"  # Update based on your actual license
 
@@ -38,10 +38,10 @@ class Codesandbox < Formula
 
   test do
     # Test that the binary was installed and can show help
-    assert_match "Create isolated Ubuntu Docker containers", shell_output("#{bin}/codesandbox --help")
+    assert_match "Create isolated Ubuntu Docker containers", shell_output("#{bin}/agentsandbox --help")
     
     # Test version output
-    assert_match version.to_s, shell_output("#{bin}/codesandbox --version")
+    assert_match version.to_s, shell_output("#{bin}/agentsandbox --version")
   end
 end
 ```
@@ -52,10 +52,10 @@ When you create a new release, calculate the SHA256 checksum:
 
 ```bash
 # Download the release archive
-curl -L -o codesandbox-v0.1.0.tar.gz https://github.com/your-username/codesandbox/archive/refs/tags/v0.1.0.tar.gz
+curl -L -o agentsandbox-v0.1.0.tar.gz https://github.com/your-username/agentsandbox/archive/refs/tags/v0.1.0.tar.gz
 
 # Generate SHA256
-shasum -a 256 codesandbox-v0.1.0.tar.gz
+shasum -a 256 agentsandbox-v0.1.0.tar.gz
 ```
 
 Update the `sha256` field in your formula with this value.
@@ -66,31 +66,31 @@ Before publishing, test the formula locally:
 
 ```bash
 # Install from your local tap
-brew install --build-from-source ./Formula/codesandbox.rb
+brew install --build-from-source ./Formula/agentsandbox.rb
 
 # Run the tests
-brew test codesandbox
+brew test agentsandbox
 
 # Audit the formula
-brew audit --strict --online codesandbox
+brew audit --strict --online agentsandbox
 ```
 
 ## Using Your Homebrew Tap
 
-Once your tap is set up, users can install codesandbox like this:
+Once your tap is set up, users can install agentsandbox like this:
 
 ```bash
 # Add your tap
-brew tap your-username/codesandbox
+brew tap your-username/agentsandbox
 
-# Install codesandbox
-brew install codesandbox
+# Install agentsandbox
+brew install agentsandbox
 ```
 
 Or in one command:
 
 ```bash
-brew install your-username/codesandbox/codesandbox
+brew install your-username/agentsandbox/agentsandbox
 ```
 
 ## Updating the Formula
@@ -127,9 +127,9 @@ When you release a new version:
 ## Example Tap Structure
 
 ```
-homebrew-codesandbox/
+homebrew-agentsandbox/
 ├── Formula/
-│   └── codesandbox.rb
+│   └── agentsandbox.rb
 └── README.md
 ```
 

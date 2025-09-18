@@ -10,6 +10,9 @@ mod settings;
 #[path = "../src/language.rs"]
 mod language;
 
+#[path = "../src/state.rs"]
+mod state;
+
 #[path = "../src/container/mod.rs"]
 mod container;
 
@@ -61,7 +64,7 @@ fn test_generate_container_name_with_git_repo() {
         .expect("git commit");
 
     let name = generate_container_name(&repo_path, &Agent::Claude);
-    let prefix = "csb-claude-my-repo--feature-test-";
+    let prefix = "agent-claude-my-repo--feature-test-";
     assert!(name.starts_with(prefix));
     let ts = &name[prefix.len()..];
     assert_eq!(ts.len(), 10);
@@ -75,7 +78,7 @@ fn test_generate_container_name_without_git_repo() {
     fs::create_dir(&dir_path).expect("create dir");
 
     let name = generate_container_name(&dir_path, &Agent::Claude);
-    let prefix = "csb-claude-another-repo-unknown-";
+    let prefix = "agent-claude-another-repo-unknown-";
     assert!(name.starts_with(prefix));
     let ts = &name[prefix.len()..];
     assert_eq!(ts.len(), 10);
@@ -96,12 +99,12 @@ cmd="$1"
 shift
 case "$cmd" in
   ps)
-    echo "csb-old"
-    echo "csb-recent"
+    echo "agent-old"
+    echo "agent-recent"
     ;;
   inspect)
     name="${!#}"
-    if [ "$name" = "csb-old" ]; then
+    if [ "$name" = "agent-old" ]; then
       echo "1970-01-01T00:00:00Z"
     else
       date -u +"%Y-%m-%dT%H:%M:%SZ"
@@ -109,7 +112,7 @@ case "$cmd" in
     ;;
   logs)
     name="${!#}"
-    if [ "$name" = "csb-old" ]; then
+    if [ "$name" = "agent-old" ]; then
       :
     else
       echo "has logs"
@@ -142,7 +145,7 @@ esac
     env::set_var("PATH", original_path);
 
     let removed = fs::read_to_string(&rm_log).unwrap();
-    assert_eq!(removed.trim(), "csb-old");
+    assert_eq!(removed.trim(), "agent-old");
 }
 
 #[test]
@@ -156,12 +159,12 @@ cmd="$1"
 shift
 case "$cmd" in
   ps)
-    echo "csb-claude-proj-main-123456"
+    echo "agent-claude-proj-main-123456"
     echo "unrelated"
     ;;
   inspect)
     name="${!#}"
-    if [ "$name" = "csb-claude-proj-main-123456" ]; then
+    if [ "$name" = "agent-claude-proj-main-123456" ]; then
       echo "/projects/proj"
     fi
     ;;
@@ -188,7 +191,7 @@ esac
 
     assert_eq!(containers.len(), 1);
     assert_eq!(containers[0].0, "proj");
-    assert_eq!(containers[0].1, "csb-claude-proj-main-123456");
+    assert_eq!(containers[0].1, "agent-claude-proj-main-123456");
     assert_eq!(containers[0].2.as_deref(), Some("/projects/proj"));
 }
 
@@ -229,8 +232,8 @@ async fn create_container_masks_only_existing_env_files() {
         false,
         false,
     )
-        .await
-        .unwrap();
+    .await
+    .unwrap();
 
     env::set_var("PATH", original_path);
 
@@ -265,7 +268,11 @@ async fn create_container_isolates_node_modules_and_copies_from_host() {
     let project_dir = tmp.path().join("proj-node");
     fs::create_dir(&project_dir).expect("create project dir");
     // Minimal Node project
-    fs::write(project_dir.join("package.json"), "{\n  \"name\": \"test\"\n}\n").unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        "{\n  \"name\": \"test\"\n}\n",
+    )
+    .unwrap();
     // Create a host node_modules with a file to verify copy
     let nm_dir = project_dir.join("node_modules");
     fs::create_dir_all(nm_dir.join(".keep")).unwrap();
@@ -319,15 +326,14 @@ esac
     let run_args = fs::read_to_string(&run_log).unwrap();
     let node_modules_path = project_dir.join("node_modules");
     // Ensure the node_modules anonymous volume is present in run args
-    assert!(run_args.contains(&format!(" {} ", node_modules_path.display()))
-        || run_args.ends_with(&format!(" {}", node_modules_path.display()))
-        || run_args.starts_with(&format!("{} ", node_modules_path.display())));
+    assert!(
+        run_args.contains(&format!(" {} ", node_modules_path.display()))
+            || run_args.ends_with(&format!(" {}", node_modules_path.display()))
+            || run_args.starts_with(&format!("{} ", node_modules_path.display()))
+    );
 
     // Ensure docker cp was invoked to copy node_modules
     let cp_args = fs::read_to_string(&cp_log).unwrap();
-    let expected_dest = format!(
-        "test-node:{}",
-        project_dir.join("node_modules").display()
-    );
+    let expected_dest = format!("test-node:{}", project_dir.join("node_modules").display());
     assert!(cp_args.contains(&expected_dest));
 }
