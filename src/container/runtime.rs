@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use std::env;
-use std::path::Path;
-use std::process::Command;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitStatus};
 use tempfile::NamedTempFile;
 
 use crate::cli::Agent;
@@ -10,7 +11,7 @@ use crate::language::{
     detect_project_languages, ensure_language_tools, sync_node_modules_from_host, ProjectLanguage,
 };
 use crate::settings::load_settings;
-use crate::state::{load_container_run_command, save_container_run_command};
+use crate::state::{load_container_run_command, prepare_session_log, save_container_run_command};
 
 use super::manage::{container_exists, is_container_running};
 
@@ -423,35 +424,14 @@ async fn attach_to_container(
         }
     }
 
-    if shell {
+    let command = if shell {
         let path_str = current_dir.display().to_string();
         let escaped = path_str.replace('\'', "'\\''");
-        let command = format!(
+        format!(
             "cd '{}' && (source ~/.cargo/env 2>/dev/null || true); (source ~/.bashrc 2>/dev/null || true); exec /bin/bash",
             escaped
-        );
-        let mut args = vec!["exec"];
-        if allocate_tty {
-            args.push("-it");
-        } else {
-            args.push("-i");
-        }
-        args.push(container_name);
-        args.extend(["/bin/bash", "-c", &command]);
-        let attach_status = Command::new("docker")
-            .args(&args)
-            .status()
-            .context("Failed to attach to container")?;
-        if !attach_status.success() {
-            println!(
-                "You can manually attach with: docker exec -it {} /bin/bash",
-                container_name
-            );
-        }
-        return Ok(());
-    }
-
-    let command = if let Some(mut cmd) = stored_cmd {
+        )
+    } else if let Some(mut cmd) = stored_cmd {
         if agent_continue && !cmd.contains(" --continue") {
             cmd.push_str(" --continue");
         }
@@ -460,28 +440,142 @@ async fn attach_to_container(
         build_agent_command(current_dir, agent, agent_continue, skip_permission_flag)
     };
 
-    let mut args = vec!["exec"];
-    if allocate_tty {
-        args.push("-it");
+    let should_log_session = allocate_tty;
+    let script_available = if should_log_session {
+        Command::new("docker")
+            .args([
+                "exec",
+                container_name,
+                "sh",
+                "-c",
+                "command -v script >/dev/null 2>&1",
+            ])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
     } else {
-        args.push("-i");
+        false
+    };
+
+    let mut session_logging = if script_available {
+        match prepare_session_log(container_name) {
+            Ok(paths) => Some(paths),
+            Err(err) => {
+                println!(
+                    "Warning: failed to prepare session logging directory: {}",
+                    err
+                );
+                None
+            }
+        }
+    } else {
+        if should_log_session {
+            println!(
+                "Warning: 'script' command not available in container; session logging disabled."
+            );
+        }
+        None
+    };
+
+    let attach_status = run_docker_exec_with_logging(
+        container_name,
+        allocate_tty,
+        &command,
+        session_logging.as_ref(),
+    )?;
+
+    if let Some((host_log_path, container_log_path)) = session_logging.take() {
+        let log_output = Command::new("docker")
+            .args(["exec", container_name, "cat", &container_log_path])
+            .output();
+
+        match log_output {
+            Ok(output) if output.status.success() => {
+                if let Err(err) = fs::write(&host_log_path, output.stdout) {
+                    println!(
+                        "Warning: failed to write session log to {}: {}",
+                        host_log_path.display(),
+                        err
+                    );
+                } else {
+                    println!("Session log saved to {}", host_log_path.display());
+                }
+            }
+            Ok(output) => {
+                if !output.stderr.is_empty() {
+                    let err = String::from_utf8_lossy(&output.stderr);
+                    println!(
+                        "Warning: failed to capture session log from container: {}",
+                        err.trim()
+                    );
+                } else {
+                    println!("Warning: failed to capture session log from container");
+                }
+            }
+            Err(err) => {
+                println!(
+                    "Warning: failed to read session log from container: {}",
+                    err
+                );
+            }
+        }
+
+        let _ = Command::new("docker")
+            .args(["exec", container_name, "rm", "-f", &container_log_path])
+            .status();
     }
-    args.push(container_name);
-    args.extend(["/bin/bash", "-c", &command]);
-    let attach_status = Command::new("docker")
-        .args(&args)
-        .status()
-        .context("Failed to attach to container")?;
 
     if !attach_status.success() {
-        println!("Failed to start {} automatically.", agent);
-        println!(
-            "You can manually attach with: docker exec -it {} /bin/bash",
-            container_name
-        );
+        if shell {
+            println!(
+                "You can manually attach with: docker exec -it {} /bin/bash",
+                container_name
+            );
+        } else {
+            println!("Failed to start {} automatically.", agent);
+            println!(
+                "You can manually attach with: docker exec -it {} /bin/bash",
+                container_name
+            );
+        }
     }
 
     Ok(())
+}
+
+fn run_docker_exec_with_logging(
+    container_name: &str,
+    allocate_tty: bool,
+    command: &str,
+    session_logging: Option<&(PathBuf, String)>,
+) -> Result<ExitStatus> {
+    let mut args: Vec<String> = vec!["exec".to_string()];
+    if allocate_tty {
+        args.push("-it".to_string());
+    } else {
+        args.push("-i".to_string());
+    }
+    args.push(container_name.to_string());
+
+    if let Some((_, container_log_path)) = session_logging {
+        args.push("script".to_string());
+        args.push("-q".to_string());
+        args.push("-f".to_string());
+        args.push(container_log_path.clone());
+        args.push("/bin/bash".to_string());
+        args.push("-c".to_string());
+        args.push(command.to_string());
+    } else {
+        args.push("/bin/bash".to_string());
+        args.push("-c".to_string());
+        args.push(command.to_string());
+    }
+
+    let status = Command::new("docker")
+        .args(&args)
+        .status()
+        .context("Failed to attach to container")?;
+    Ok(status)
 }
 
 fn create_dockerfile_content(user: &str, uid: u32, gid: u32) -> String {
