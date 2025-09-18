@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use chrono::Utc;
 use std::fs;
 use std::path::PathBuf;
 
@@ -79,4 +80,23 @@ pub fn load_container_run_command(container_name: &str) -> Result<Option<String>
     } else {
         Ok(Some(trimmed))
     }
+}
+
+pub fn prepare_session_log(container_name: &str) -> Result<(PathBuf, String)> {
+    let logs_dir = get_container_dir(container_name)?.join("logs");
+    fs::create_dir_all(&logs_dir).context("Failed to create session log directory")?;
+
+    let timestamp = Utc::now().format("%Y%m%d-%H%M%S-%f").to_string();
+    let mut file_name = format!("session-{}.log", timestamp);
+    let mut host_path = logs_dir.join(&file_name);
+    let mut counter = 1;
+
+    while host_path.exists() {
+        file_name = format!("session-{}-{}.log", timestamp, counter);
+        host_path = logs_dir.join(&file_name);
+        counter += 1;
+    }
+
+    let container_path = format!("/tmp/{}", file_name);
+    Ok((host_path, container_path))
 }
