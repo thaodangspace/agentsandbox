@@ -21,7 +21,8 @@ use std::process::Command;
 use cli::{Agent, Cli, Commands};
 use container::{
     auto_remove_old_containers, check_docker_availability, cleanup_containers, create_container,
-    generate_container_name, list_all_containers, list_containers, resume_container,
+    find_existing_container, generate_container_name, list_all_containers, list_containers,
+    resume_container,
 };
 use settings::load_settings;
 use state::{clear_last_container, load_last_container, save_last_container};
@@ -252,6 +253,25 @@ async fn main() -> Result<()> {
             .await?;
             return Ok(());
         }
+    }
+
+    // Check if there's already an existing container for this directory/agent/branch combination
+    if let Some(existing_container) = find_existing_container(&current_dir, &cli.agent)? {
+        println!("Found existing container: {}", existing_container);
+        println!("Attaching to existing container instead of creating a new one...");
+
+        let agent = Agent::from_container_name(&existing_container).unwrap_or_else(|| cli.agent.clone());
+        resume_container(
+            &existing_container,
+            &agent,
+            false,
+            skip_permission_flag.as_deref(),
+            cli.shell,
+            true,
+        )
+        .await?;
+        save_last_container(&existing_container)?;
+        return Ok(());
     }
 
     let additional_dir = match &cli.add_dir {

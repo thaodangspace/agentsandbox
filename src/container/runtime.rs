@@ -280,6 +280,7 @@ pub async fn create_container(
         &current_user,
         &languages,
     )?;
+    println!("Docker run command: {:?}", docker_run);
     let run_output = docker_run
         .output()
         .context("Failed to run Docker container")?;

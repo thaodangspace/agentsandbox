@@ -3,6 +3,7 @@ use chrono::Utc;
 use std::path::Path;
 use std::process::Command;
 
+use crate::cli::Agent;
 use super::naming::sanitize;
 
 pub fn cleanup_containers(current_dir: &Path) -> Result<()> {
@@ -75,6 +76,64 @@ pub fn list_containers(current_dir: &Path) -> Result<Vec<String>> {
         .map(|s| s.to_string())
         .collect();
     Ok(containers)
+}
+
+pub fn find_existing_container(current_dir: &Path, agent: &Agent) -> Result<Option<String>> {
+    let dir_name = current_dir
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(sanitize)
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let agent_name = sanitize(agent.command());
+
+    // Get current branch
+    let branch_output = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(current_dir)
+        .output();
+    let branch_name = branch_output
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| sanitize(String::from_utf8_lossy(&o.stdout).trim()))
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let list_output = Command::new("docker")
+        .args(["ps", "-a", "--format", "{{.Names}}"])
+        .output()
+        .context("Failed to list Docker containers")?;
+
+    if !list_output.status.success() {
+        anyhow::bail!(
+            "Failed to list containers: {}",
+            String::from_utf8_lossy(&list_output.stderr)
+        );
+    }
+
+    let names = String::from_utf8_lossy(&list_output.stdout);
+
+    // Look for containers that match: agent-{agent}-{dir}-{branch}-*
+    let pattern = format!("agent-{}-{}-{}-", agent_name, dir_name, branch_name);
+
+    let matching_containers: Vec<String> = names
+        .lines()
+        .filter(|n| n.starts_with(&pattern))
+        .map(|s| s.to_string())
+        .collect();
+
+    // Return the most recently created container if any exist
+    if !matching_containers.is_empty() {
+        // Sort by timestamp (last part of name) and return the newest
+        let mut sorted = matching_containers;
+        sorted.sort_by(|a, b| {
+            let a_timestamp = a.split('-').last().unwrap_or("0");
+            let b_timestamp = b.split('-').last().unwrap_or("0");
+            b_timestamp.cmp(a_timestamp) // Reverse order for newest first
+        });
+        Ok(Some(sorted[0].clone()))
+    } else {
+        Ok(None)
+    }
 }
 
 pub fn list_all_containers() -> Result<Vec<(String, String, Option<String>)>> {
@@ -198,7 +257,7 @@ fn get_container_directory(name: &str) -> Result<Option<String>> {
 
 pub fn auto_remove_old_containers(minutes: u64) -> Result<()> {
     if minutes == 0 {
-        return Ok(());
+        return Ok(())
     }
 
     let cutoff = Utc::now() - chrono::Duration::minutes(minutes as i64);
@@ -234,27 +293,18 @@ pub fn auto_remove_old_containers(minutes: u64) -> Result<()> {
         if created > cutoff {
             continue;
         }
-
-        let logs_output = Command::new("docker")
-            .args(["logs", name])
+        
+        println!("Auto removing unused container {name}");
+        let rm_output = Command::new("docker")
+            .args(["rm", "-f", name])
             .output()
-            .context("Failed to check container logs")?;
-        if !logs_output.status.success() {
-            continue;
-        }
-        if logs_output.stdout.is_empty() && logs_output.stderr.is_empty() {
-            println!("Auto removing unused container {name}");
-            let rm_output = Command::new("docker")
-                .args(["rm", "-f", name])
-                .output()
-                .context("Failed to remove container")?;
-            if !rm_output.status.success() {
-                anyhow::bail!(
-                    "Failed to remove container {}: {}",
-                    name,
-                    String::from_utf8_lossy(&rm_output.stderr)
-                );
-            }
+            .context("Failed to remove container")?;
+        if !rm_output.status.success() {
+            anyhow::bail!(
+                "Failed to remove container {}: {}",
+                name,
+                String::from_utf8_lossy(&rm_output.stderr)
+            );
         }
     }
     Ok(())

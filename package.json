@@ -1,6 +1,6 @@
 {
   "name": "@thaodangspace/agent-sandbox",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Agent Sandbox CLI - Creates isolated Docker containers with AI development agents",
   "bin": {
     "agentsandbox": "./bin/agentsandbox.js"
@@ -31,3 +31,4 @@
     "access": "public"
   }
 }
+
