@@ -559,13 +559,19 @@ fn run_docker_exec_with_logging(
     args.push(container_name.to_string());
 
     if let Some((_, container_log_path)) = session_logging {
+        // Use util-linux 'script' with -c to run the command and log output.
+        // Correct ordering per util-linux: options, -c <command>, then [file].
         args.push("script".to_string());
         args.push("-q".to_string());
         args.push("-f".to_string());
-        args.push(container_log_path.clone());
-        args.push("/bin/bash".to_string());
         args.push("-c".to_string());
-        args.push(command.to_string());
+        // Wrap the provided command in bash -lc "<command>"
+        let mut quoted = String::from(command);
+        quoted = quoted.replace("'", "'\\''");
+        let bash_c = format!("/bin/bash -lc '{}'", quoted);
+        args.push(bash_c);
+        // file argument last
+        args.push(container_log_path.clone());
     } else {
         args.push("/bin/bash".to_string());
         args.push("-c".to_string());
@@ -576,6 +582,26 @@ fn run_docker_exec_with_logging(
         .args(&args)
         .status()
         .context("Failed to attach to container")?;
+
+    // If logging was requested but 'script' failed (non-zero), retry once without logging
+    if !status.success() && session_logging.is_some() {
+        let mut args_no_log: Vec<String> = vec!["exec".to_string()];
+        if allocate_tty {
+            args_no_log.push("-it".to_string());
+        } else {
+            args_no_log.push("-i".to_string());
+        }
+        args_no_log.push(container_name.to_string());
+        args_no_log.push("/bin/bash".to_string());
+        args_no_log.push("-c".to_string());
+        args_no_log.push(command.to_string());
+
+        let retry_status = Command::new("docker")
+            .args(&args_no_log)
+            .status()
+            .context("Failed to attach to container (retry without logging)")?;
+        return Ok(retry_status);
+    }
     Ok(status)
 }
 
