@@ -12,3 +12,4 @@ web/node_modules/
 .serena/logs/**
 -
 ._.DS_Store
+.dev

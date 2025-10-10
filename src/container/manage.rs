@@ -3,8 +3,8 @@ use chrono::Utc;
 use std::path::Path;
 use std::process::Command;
 
-use crate::cli::Agent;
 use super::naming::sanitize;
+use crate::cli::Agent;
 
 pub fn cleanup_containers(current_dir: &Path) -> Result<()> {
     let dir_name = current_dir
@@ -255,7 +255,7 @@ fn get_container_directory(name: &str) -> Result<Option<String>> {
 
 pub fn auto_remove_old_containers(minutes: u64) -> Result<()> {
     if minutes == 0 {
-        return Ok(())
+        return Ok(());
     }
 
     let cutoff = Utc::now() - chrono::Duration::minutes(minutes as i64);
@@ -291,7 +291,7 @@ pub fn auto_remove_old_containers(minutes: u64) -> Result<()> {
         if created > cutoff {
             continue;
         }
-        
+
         println!("Auto removing unused container {name}");
         let rm_output = Command::new("docker")
             .args(["rm", "-f", name])

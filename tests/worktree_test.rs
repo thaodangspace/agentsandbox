@@ -10,7 +10,7 @@ use worktree::create_worktree;
 // fn create_missing_branch() {
 //     let tmp = tempdir().expect("temp dir");
 //     let repo_path = tmp.path();
-// 
+//
 //     Command::new("git")
 //         .args(["config", "user.email", "test@example.com"])
 //         .current_dir(repo_path)
@@ -37,14 +37,14 @@ use worktree::create_worktree;
 //         .current_dir(repo_path)
 //         .status()
 //         .expect("git commit");
-// 
-// 
-// 
-// 
-// 
+//
+//
+//
+//
+//
 //     let worktree = create_worktree(repo_path, "feature").expect("create worktree");
 //     assert!(worktree.exists());
-// 
+//
 //     let branch_status = Command::new("git")
 //         .args(["rev-parse", "--verify", "feature"])
 //         .current_dir(repo_path)
@@ -84,8 +84,6 @@ fn reuse_existing_worktree() {
         .current_dir(repo_path)
         .status()
         .expect("git commit");
-
-
 
     let first = create_worktree(repo_path, "feature").expect("create worktree");
     let second = create_worktree(repo_path, "feature").expect("reuse worktree");

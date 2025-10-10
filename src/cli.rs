@@ -40,11 +40,9 @@ pub struct Cli {
 
 #[derive(Subcommand, Clone)]
 pub enum Commands {
-    #[command(about = "List containers for this directory and optionally attach to one")]
+    #[command(about = "List containers for this directory and optionally attach")]
     Ls,
-    #[command(
-        about = "List all running Agent Sandbox containers and optionally attach or open their directory"
-    )]
+    #[command(about = "List all running Agent Sandbox containers and optionally attach")]
     Ps,
     #[command(about = "Remove all containers created from this directory")]
     Cleanup,

@@ -349,7 +349,8 @@ case "$cmd" in
     ;;  *)
     exit 1
     ;;esac
-"###.replace("__LOG__", rm_log.to_str().unwrap());
+"###
+    .replace("__LOG__", rm_log.to_str().unwrap());
     fs::write(&docker_path, script).unwrap();
     #[cfg(unix)]
     {

@@ -16,7 +16,6 @@ use anyhow::{Context, Result};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
-use std::process::Command;
 
 use cli::{Agent, Cli, Commands};
 use container::{
@@ -108,9 +107,7 @@ async fn main() -> Result<()> {
             })
             .collect();
         println!("{}", Table::new(rows).with(Style::rounded()));
-        print!(
-            "Select a container to attach (number), or type 'cd <number>' to open its directory: "
-        );
+        print!("Select a container to attach (number, or press Enter to cancel): ");
         io::stdout().flush().ok();
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
@@ -118,25 +115,25 @@ async fn main() -> Result<()> {
         if input.is_empty() {
             return Ok(());
         }
-        if let Some(rest) = input.strip_prefix("cd ") {
-            match rest.parse::<usize>() {
-                Ok(num) if num >= 1 && num <= containers.len() => {
-                    if let Some(path) = &containers[num - 1].2 {
-                        let escaped = path.replace('\'', "'\\''");
-                        Command::new("bash")
-                            .args(["-c", &format!("cd '{}' && exec bash", escaped)])
-                            .status()
-                            .ok();
-                    } else {
-                        println!("Path not available for selected container");
-                    }
-                }
-                _ => println!("Invalid selection"),
-            }
-            return Ok(());
-        }
+
         match input.parse::<usize>() {
             Ok(num) if num >= 1 && num <= containers.len() => {
+                // Prompt for attach mode
+                print!("Choose attach mode:\n  1) Attach with agent\n  2) Attach to shell only\nEnter choice: ");
+                io::stdout().flush().ok();
+                let mut mode_input = String::new();
+                io::stdin().read_line(&mut mode_input)?;
+                let mode_input = mode_input.trim();
+
+                let shell_mode = match mode_input {
+                    "1" => false,
+                    "2" => true,
+                    _ => {
+                        println!("Invalid choice");
+                        return Ok(());
+                    }
+                };
+
                 if let Some(path) = &containers[num - 1].2 {
                     env::set_current_dir(path)
                         .with_context(|| format!("Failed to change directory to {}", path))?;
@@ -148,7 +145,7 @@ async fn main() -> Result<()> {
                         &agent,
                         false,
                         skip_permission_flag.as_deref(),
-                        cli.shell,
+                        shell_mode,
                         true,
                     )
                     .await?;
@@ -219,6 +216,22 @@ async fn main() -> Result<()> {
 
         match input.parse::<usize>() {
             Ok(num) if num >= 1 && num <= containers.len() => {
+                // Prompt for attach mode
+                print!("Choose attach mode:\n  1) Attach with agent\n  2) Attach to shell only\nEnter choice: ");
+                io::stdout().flush().ok();
+                let mut mode_input = String::new();
+                io::stdin().read_line(&mut mode_input)?;
+                let mode_input = mode_input.trim();
+
+                let shell_mode = match mode_input {
+                    "1" => false,
+                    "2" => true,
+                    _ => {
+                        println!("Invalid choice");
+                        return Ok(());
+                    }
+                };
+
                 let selected = &containers[num - 1];
                 let agent =
                     Agent::from_container_name(selected).unwrap_or_else(|| cli.agent.clone());
@@ -227,7 +240,7 @@ async fn main() -> Result<()> {
                     &agent,
                     false,
                     skip_permission_flag.as_deref(),
-                    cli.shell,
+                    shell_mode,
                     true,
                 )
                 .await?;
@@ -260,7 +273,8 @@ async fn main() -> Result<()> {
         println!("Found existing container: {}", existing_container);
         println!("Attaching to existing container instead of creating a new one...");
 
-        let agent = Agent::from_container_name(&existing_container).unwrap_or_else(|| cli.agent.clone());
+        let agent =
+            Agent::from_container_name(&existing_container).unwrap_or_else(|| cli.agent.clone());
         resume_container(
             &existing_container,
             &agent,
