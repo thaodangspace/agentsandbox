@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,7 +12,10 @@ use crate::language::{
     detect_project_languages, ensure_language_tools, sync_node_modules_from_host, ProjectLanguage,
 };
 use crate::settings::load_settings;
-use crate::state::{load_container_run_command, prepare_session_log, save_container_run_command};
+use crate::state::{
+    load_container_run_command, load_image_agent_versions, prepare_session_log,
+    save_container_run_command, save_image_agent_versions,
+};
 
 use super::manage::{container_exists, is_container_running};
 
@@ -72,7 +76,140 @@ fn mount_language_configs(
     }
 }
 
-fn build_docker_image(current_user: &str) -> Result<()> {
+fn parse_version_output(stdout: &[u8], stderr: &[u8]) -> Option<String> {
+    let stdout_text = String::from_utf8_lossy(stdout);
+    for line in stdout_text.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    let stderr_text = String::from_utf8_lossy(stderr);
+    for line in stderr_text.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    None
+}
+
+fn detect_host_agent_version(agent: &Agent) -> Option<String> {
+    let output = Command::new(agent.command())
+        .arg("--version")
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    parse_version_output(&output.stdout, &output.stderr)
+}
+
+fn versions_match(a: &str, b: &str) -> bool {
+    a.trim().eq_ignore_ascii_case(b.trim())
+}
+
+fn query_agent_version_in_image(agent: &Agent) -> Result<Option<String>> {
+    let check_command = format!("{} --version", agent.command());
+    let output = Command::new("docker")
+        .args([
+            "run",
+            "--rm",
+            "agentsandbox-image",
+            "bash",
+            "-lc",
+            &check_command,
+        ])
+        .output()
+        .context(format!(
+            "Failed to inspect {} version inside sandbox image",
+            agent
+        ))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.trim().is_empty() {
+            println!(
+                "Warning: unable to determine {} version in sandbox image: {}",
+                agent,
+                stderr.trim()
+            );
+        }
+        return Ok(None);
+    }
+
+    Ok(parse_version_output(&output.stdout, &output.stderr))
+}
+
+fn capture_agent_versions_from_image() -> Result<HashMap<String, String>> {
+    let mut versions = HashMap::new();
+
+    for agent in [
+        Agent::Claude,
+        Agent::Gemini,
+        Agent::Codex,
+        Agent::Qwen,
+        Agent::Cursor,
+    ] {
+        if let Some(version) = query_agent_version_in_image(&agent)? {
+            versions.insert(agent.command().to_string(), version);
+        }
+    }
+
+    Ok(versions)
+}
+
+fn evaluate_agent_version_status(agent: &Agent) -> Result<(Option<String>, Option<String>, bool)> {
+    let recorded_versions = load_image_agent_versions().unwrap_or_else(|err| {
+        println!(
+            "Warning: failed to read cached agent version information: {}",
+            err
+        );
+        HashMap::new()
+    });
+    let image_version = recorded_versions
+        .get(agent.command())
+        .map(|v| v.to_string());
+    let host_version = detect_host_agent_version(agent);
+    let mut force_rebuild = false;
+
+    match (&host_version, &image_version) {
+        (Some(host), Some(image)) if !versions_match(host, image) => {
+            println!(
+                "Detected {} version mismatch between host ({}) and sandbox image ({}).",
+                agent, host, image
+            );
+            println!(
+                "Rebuilding the sandbox image to refresh {}. After the rebuild, please update the environment that remains out of sync.",
+                agent
+            );
+            force_rebuild = true;
+        }
+        (Some(host), None) => {
+            println!(
+                "No recorded {} version for sandbox image. Rebuilding image to capture version information (host reports {}).",
+                agent, host
+            );
+            force_rebuild = true;
+        }
+        (None, None) => {
+            println!(
+                "Unable to determine {} version on host or sandbox image. Rebuilding image to capture version information.",
+                agent
+            );
+            force_rebuild = true;
+        }
+        _ => {}
+    }
+
+    Ok((host_version, image_version, force_rebuild))
+}
+
+fn build_docker_image(current_user: &str, force_rebuild: bool) -> Result<HashMap<String, String>> {
     // Determine host UID/GID so the container user matches host permissions
     let uid_output = Command::new("id")
         .arg("-u")
@@ -97,16 +234,25 @@ fn build_docker_image(current_user: &str) -> Result<()> {
     let dockerfile_path = temp_dir.join("Dockerfile.agentsandbox");
     std::fs::write(&dockerfile_path, dockerfile_content).context("Failed to write Dockerfile")?;
 
-    println!("Building Docker image...");
-    let build_output = Command::new("docker")
-        .args([
-            "build",
-            "-t",
-            "agentsandbox-image",
-            "-f",
-            dockerfile_path.to_str().unwrap(),
-            ".",
-        ])
+    println!(
+        "Building Docker image{}...",
+        if force_rebuild {
+            " (refreshing agent versions)"
+        } else {
+            ""
+        }
+    );
+    let mut build_command = Command::new("docker");
+    build_command.arg("build");
+    build_command.arg("-t");
+    build_command.arg("agentsandbox-image");
+    if force_rebuild {
+        build_command.arg("--no-cache");
+    }
+    build_command.arg("-f");
+    build_command.arg(dockerfile_path.to_str().unwrap());
+    build_command.arg(".");
+    let build_output = build_command
         .current_dir(&temp_dir)
         .output()
         .context("Failed to build Docker image")?;
@@ -118,7 +264,21 @@ fn build_docker_image(current_user: &str) -> Result<()> {
         );
     }
 
-    Ok(())
+    match capture_agent_versions_from_image() {
+        Ok(versions) => {
+            if let Err(err) = save_image_agent_versions(&versions) {
+                println!(
+                    "Warning: failed to cache sandbox agent version information: {}",
+                    err
+                );
+            }
+            Ok(versions)
+        }
+        Err(err) => {
+            println!("Warning: unable to capture sandbox agent versions: {}", err);
+            Ok(HashMap::new())
+        }
+    }
 }
 
 fn build_run_command(
@@ -271,7 +431,36 @@ pub async fn create_container(
     attach: bool,
 ) -> Result<()> {
     let current_user = env::var("USER").unwrap_or_else(|_| "ubuntu".to_string());
-    build_docker_image(&current_user)?;
+    let (host_version, image_version_before, force_rebuild) = evaluate_agent_version_status(agent)?;
+    let image_versions = build_docker_image(&current_user, force_rebuild)?;
+    let mut image_version = image_versions.get(agent.command()).cloned();
+    if image_version.is_none() {
+        image_version = image_version_before;
+    }
+
+    if let (Some(host), Some(image)) = (&host_version, image_version.as_ref()) {
+        if !versions_match(host, image) {
+            println!(
+                "Warning: {} version mismatch persists (host: {}, sandbox image: {}).",
+                agent, host, image
+            );
+            println!(
+                "Please update {} on your host to {} (or reinstall the sandbox image) to keep environments aligned.",
+                agent, image
+            );
+        } else if force_rebuild {
+            println!(
+                "Sandbox image {} version is now {} (matches host).",
+                agent, image
+            );
+        }
+    } else if host_version.is_some() && image_version.is_none() {
+        println!(
+            "Warning: unable to determine sandbox image version for {} after rebuild.",
+            agent
+        );
+    }
+
     let languages = detect_project_languages(current_dir);
     let (mut docker_run, _env_file_overlays) = build_run_command(
         container_name,
