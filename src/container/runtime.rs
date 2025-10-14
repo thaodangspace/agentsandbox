@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
+use chrono::Local;
 use std::collections::HashMap;
 use std::env;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 use tempfile::NamedTempFile;
@@ -268,7 +270,7 @@ fn build_docker_image(current_user: &str, force_rebuild: bool) -> Result<HashMap
     let dockerfile_content = create_dockerfile_content(current_user, uid, gid);
     let temp_dir = std::env::temp_dir();
     let dockerfile_path = temp_dir.join("Dockerfile.agentsandbox");
-    std::fs::write(&dockerfile_path, dockerfile_content).context("Failed to write Dockerfile")?;
+    fs::write(&dockerfile_path, dockerfile_content).context("Failed to write Dockerfile")?;
 
     println!(
         "Building Docker image{}...",

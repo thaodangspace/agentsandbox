@@ -1,11 +1,12 @@
 #[path = "../src/state.rs"]
 mod state;
 
+use chrono::Local;
 use state::{
     clear_last_container, load_container_run_command, load_last_container, prepare_session_log,
     save_container_run_command, save_last_container,
 };
-use std::{env, fs, path::PathBuf, sync::Mutex};
+use std::{env, path::Path, path::PathBuf, sync::Mutex};
 use tempfile::tempdir;
 
 struct TempHome {
@@ -44,6 +45,24 @@ fn setup_temp_home() -> TempHome {
         _guard: guard,
         original_home,
         original_xdg_state,
+    }
+}
+
+struct TempCurrentDir {
+    original: PathBuf,
+}
+
+impl TempCurrentDir {
+    fn new(path: &Path) -> Self {
+        let original = env::current_dir().expect("failed to capture current dir");
+        env::set_current_dir(path).expect("failed to set current dir");
+        TempCurrentDir { original }
+    }
+}
+
+impl Drop for TempCurrentDir {
+    fn drop(&mut self) {
+        let _ = env::set_current_dir(&self.original);
     }
 }
 
@@ -89,8 +108,10 @@ fn test_load_missing_run_command() {
 }
 
 #[test]
-fn test_prepare_session_log_creates_unique_paths() {
+fn test_prepare_session_log_uses_daily_file_in_project_dir() {
     let _dir = setup_temp_home();
+    let project_dir = tempdir().expect("failed to create project dir");
+    let _current_dir = TempCurrentDir::new(project_dir.path());
     let container = "container_logs";
 
     let (first_path, first_container_path) =
@@ -131,7 +152,7 @@ fn test_prepare_session_log_creates_unique_paths() {
     let (second_path, second_container_path) =
         prepare_session_log(container).expect("prepare session log should succeed again");
 
-    assert_ne!(first_path, second_path);
+    assert_eq!(first_path, second_path);
     assert_ne!(first_container_path, second_container_path);
 }
 

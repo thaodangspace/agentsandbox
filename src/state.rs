@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
-use chrono::Utc;
+use chrono::{Local, Utc};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
+use std::env;
 use std::path::PathBuf;
 
 fn get_state_file_path() -> Result<PathBuf> {
@@ -140,17 +141,8 @@ pub fn load_container_run_command(container_name: &str) -> Result<Option<String>
 pub fn prepare_session_log(container_name: &str) -> Result<(PathBuf, String)> {
     let logs_dir = ensure_session_logs_dir(container_name)?;
     let timestamp = Utc::now().format("%Y%m%d-%H%M%S-%f").to_string();
-    let mut file_name = format!("session-{}.log", timestamp);
-    let mut host_path = logs_dir.join(&file_name);
-    let mut counter = 1;
+    let container_path = format!("/tmp/session-{}-{}.log", container_name, timestamp);
 
-    while host_path.exists() {
-        file_name = format!("session-{}-{}.log", timestamp, counter);
-        host_path = logs_dir.join(&file_name);
-        counter += 1;
-    }
-
-    let container_path = format!("/tmp/{}", file_name);
     Ok((host_path, container_path))
 }
 
