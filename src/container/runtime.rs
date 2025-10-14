@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
+use chrono::Local;
 use std::collections::HashMap;
 use std::env;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 use tempfile::NamedTempFile;
@@ -232,7 +234,7 @@ fn build_docker_image(current_user: &str, force_rebuild: bool) -> Result<HashMap
     let dockerfile_content = create_dockerfile_content(current_user, uid, gid);
     let temp_dir = std::env::temp_dir();
     let dockerfile_path = temp_dir.join("Dockerfile.agentsandbox");
-    std::fs::write(&dockerfile_path, dockerfile_content).context("Failed to write Dockerfile")?;
+    fs::write(&dockerfile_path, dockerfile_content).context("Failed to write Dockerfile")?;
 
     println!(
         "Building Docker image{}...",
@@ -681,14 +683,64 @@ async fn attach_to_container(
 
         match log_output {
             Ok(output) if output.status.success() => {
-                if let Err(err) = fs::write(&host_log_path, output.stdout) {
-                    println!(
-                        "Warning: failed to write session log to {}: {}",
-                        host_log_path.display(),
-                        err
-                    );
-                } else {
-                    println!("Session log saved to {}", host_log_path.display());
+                match OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(&host_log_path)
+                {
+                    Ok(mut file) => {
+                        let needs_separator = host_log_path
+                            .metadata()
+                            .map(|meta| meta.len() > 0)
+                            .unwrap_or(false);
+
+                        if needs_separator {
+                            if let Err(err) = writeln!(file) {
+                                println!(
+                                    "Warning: failed to write session separator to {}: {}",
+                                    host_log_path.display(),
+                                    err
+                                );
+                            }
+                        }
+
+                        let header = format!(
+                            "===== Session start {} ({}) =====\n",
+                            Local::now().to_rfc3339(),
+                            container_name
+                        );
+
+                        let mut write_failed = false;
+
+                        if let Err(err) = file.write_all(header.as_bytes()) {
+                            println!(
+                                "Warning: failed to write session header to {}: {}",
+                                host_log_path.display(),
+                                err
+                            );
+                            write_failed = true;
+                        }
+
+                        if let Err(err) = file.write_all(&output.stdout) {
+                            println!(
+                                "Warning: failed to append session log to {}: {}",
+                                host_log_path.display(),
+                                err
+                            );
+                            write_failed = true;
+                        }
+
+                        if !write_failed {
+                            println!("Session log appended to {}", host_log_path.display());
+                        }
+                    }
+                    Err(err) => {
+                        println!(
+                            "Warning: failed to open session log {}: {}",
+                            host_log_path.display(),
+                            err
+                        );
+                    }
                 }
             }
             Ok(output) => {
