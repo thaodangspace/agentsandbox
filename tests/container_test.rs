@@ -13,6 +13,9 @@ mod language;
 #[path = "../src/state.rs"]
 mod state;
 
+#[path = "../src/startup_log.rs"]
+mod startup_log;
+
 #[path = "../src/container/mod.rs"]
 mod container;
 

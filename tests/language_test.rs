@@ -1,6 +1,12 @@
 #[path = "../src/language.rs"]
 mod language;
 
+#[path = "../src/cli.rs"]
+mod cli;
+
+#[path = "../src/startup_log.rs"]
+mod startup_log;
+
 use language::{detect_project_languages, ProjectLanguage};
 use std::fs;
 use tempfile::tempdir;

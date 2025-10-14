@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
 
+use crate::startup_log;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ProjectLanguage {
     Rust,
@@ -82,6 +84,7 @@ pub fn detect_project_languages(dir: &Path) -> Vec<ProjectLanguage> {
 }
 
 pub fn ensure_language_tools(container_name: &str, languages: &[ProjectLanguage]) -> Result<()> {
+    let mut installed_languages = Vec::new();
     for lang in languages {
         let tool = lang.tool();
         let check_status = Command::new("docker")
@@ -105,6 +108,13 @@ pub fn ensure_language_tools(container_name: &str, languages: &[ProjectLanguage]
         if !install_status.success() {
             anyhow::bail!("Installation for {} failed", tool);
         }
+        installed_languages.push(lang.name());
+    }
+    if !installed_languages.is_empty() {
+        startup_log::event(format!(
+            "🛠️  Installing developer tooling for {}",
+            installed_languages.join(", ")
+        ));
     }
     Ok(())
 }
@@ -152,6 +162,8 @@ pub fn sync_node_modules_from_host(
     if !cp_status.success() {
         anyhow::bail!("Copying node_modules to container failed");
     }
+
+    startup_log::event("📦 Syncing host node_modules into container volume".to_string());
 
     Ok(())
 }

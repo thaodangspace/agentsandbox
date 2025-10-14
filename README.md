@@ -139,6 +139,25 @@ This command will:
 3. **Configure Agent**: Copy your agent configuration files (e.g., `.claude` from `~/.claude`)
 4. **Launch Agent**: Start the default agent (Claude) within the container environment
 
+<details>
+<summary><strong>See a sample startup log</strong></summary>
+
+```text
+╭───────────────────────────── Agent Sandbox ─────────────────────────────╮
+│ 📦 Preparing container: agent-claude-sample-main-20240501-123456         │
+│ 🔐 Syncing Claude configuration                                         │
+│ 🛠️  Installing developer tooling                                        │
+│ 🔁 Mounting /workspace from your host                                   │
+│ 🤖 Launching claude --continue                                          │
+╰────────────────────────────────────────────────────────────────────────╯
+
+Attached to container shell.
+Use `exit` to leave the session or `ctrl+p ctrl+q` to detach without stopping it.
+Session log saved to ~/.config/agentsandbox/containers/agent-claude-sample-main-20240501-123456/logs/session-20240501-123456.log
+```
+
+</details>
+
 ### Advanced Usage
 
 #### Specify a Different Agent

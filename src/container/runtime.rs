@@ -12,6 +12,7 @@ use crate::language::{
     detect_project_languages, ensure_language_tools, sync_node_modules_from_host, ProjectLanguage,
 };
 use crate::settings::load_settings;
+use crate::startup_log::{self, StartupOutcome};
 use crate::state::{
     load_container_run_command, load_image_agent_versions, prepare_session_log,
     save_container_run_command, save_image_agent_versions,
@@ -28,6 +29,7 @@ fn mount_agent_config(
     let home_dir = home::home_dir().unwrap_or_default();
 
     for agent in agent_names {
+        let mut mounted_for_agent = false;
         let paths = [
             current_dir.join(format!(".{agent}")),
             home_dir.join(format!(".{agent}")),
@@ -46,8 +48,24 @@ fn mount_agent_config(
                     host_path.display(),
                     container_path
                 );
+                mounted_for_agent = true;
                 break;
             }
+        }
+
+        if mounted_for_agent {
+            let mut label = String::new();
+            for (idx, part) in agent.split('_').enumerate() {
+                if idx > 0 {
+                    label.push(' ');
+                }
+                let mut chars = part.chars();
+                if let Some(first) = chars.next() {
+                    label.extend(first.to_uppercase());
+                }
+                label.extend(chars);
+            }
+            startup_log::event(format!("🔐 Syncing {label} configuration"));
         }
     }
 }
@@ -138,6 +156,11 @@ fn query_agent_version_in_image(agent: &Agent) -> Result<Option<String>> {
                 agent,
                 stderr.trim()
             );
+            startup_log::warn(format!(
+                "Unable to determine {} version in sandbox image: {}",
+                agent,
+                stderr.trim()
+            ));
         }
         return Ok(None);
     }
@@ -169,6 +192,10 @@ fn evaluate_agent_version_status(agent: &Agent) -> Result<(Option<String>, Optio
             "Warning: failed to read cached agent version information: {}",
             err
         );
+        startup_log::warn(format!(
+            "Failed to read cached agent version information: {}",
+            err
+        ));
         HashMap::new()
     });
     let image_version = recorded_versions
@@ -187,6 +214,9 @@ fn evaluate_agent_version_status(agent: &Agent) -> Result<(Option<String>, Optio
                 "Rebuilding the sandbox image to refresh {}. After the rebuild, please update the environment that remains out of sync.",
                 agent
             );
+            startup_log::event(format!(
+                "♻️  Detected {agent} version mismatch (host {host}, image {image}); rebuilding sandbox image"
+            ));
             force_rebuild = true;
         }
         (Some(host), None) => {
@@ -194,6 +224,9 @@ fn evaluate_agent_version_status(agent: &Agent) -> Result<(Option<String>, Optio
                 "No recorded {} version for sandbox image. Rebuilding image to capture version information (host reports {}).",
                 agent, host
             );
+            startup_log::event(format!(
+                "♻️  No recorded {agent} version for sandbox image (host reports {host}); rebuilding image"
+            ));
             force_rebuild = true;
         }
         (None, None) => {
@@ -201,6 +234,9 @@ fn evaluate_agent_version_status(agent: &Agent) -> Result<(Option<String>, Optio
                 "Unable to determine {} version on host or sandbox image. Rebuilding image to capture version information.",
                 agent
             );
+            startup_log::event(format!(
+                "♻️  Unable to determine {agent} version; rebuilding sandbox image to capture version information"
+            ));
             force_rebuild = true;
         }
         _ => {}
@@ -242,6 +278,11 @@ fn build_docker_image(current_user: &str, force_rebuild: bool) -> Result<HashMap
             ""
         }
     );
+    if force_rebuild {
+        startup_log::event("🛠️  Building sandbox image (refreshing agent versions)".to_string());
+    } else {
+        startup_log::event("🛠️  Building sandbox image".to_string());
+    }
     let mut build_command = Command::new("docker");
     build_command.arg("build");
     build_command.arg("-t");
@@ -271,11 +312,16 @@ fn build_docker_image(current_user: &str, force_rebuild: bool) -> Result<HashMap
                     "Warning: failed to cache sandbox agent version information: {}",
                     err
                 );
+                startup_log::warn(format!(
+                    "Failed to cache sandbox agent version information: {}",
+                    err
+                ));
             }
             Ok(versions)
         }
         Err(err) => {
             println!("Warning: unable to capture sandbox agent versions: {}", err);
+            startup_log::warn(format!("Unable to capture sandbox agent versions: {}", err));
             Ok(HashMap::new())
         }
     }
@@ -299,6 +345,10 @@ fn build_run_command(
         "-v",
         &format!("{}:{}", current_dir.display(), current_dir.display()),
     ]);
+    startup_log::event(format!(
+        "🗂️  Mounting workspace at {}",
+        current_dir.display()
+    ));
 
     // For Node.js projects, avoid mounting host node_modules by overlaying
     // an anonymous volume at the container's node_modules path. This prevents
@@ -312,6 +362,7 @@ fn build_run_command(
             "Isolating node_modules with container volume: {}",
             node_modules_path.display()
         );
+        startup_log::event("🧩 Isolating node_modules with container volume".to_string());
     }
 
     let settings = load_settings().unwrap_or_default();
@@ -325,6 +376,10 @@ fn build_run_command(
                 &format!("{}:{}:ro", tmp.path().display(), target.display()),
             ]);
             println!("Excluding {} from container mount", target.display());
+            startup_log::event(format!(
+                "🛡️  Masking {} from container mount",
+                target.display()
+            ));
             env_file_overlays.push(tmp);
         }
     }
@@ -332,8 +387,13 @@ fn build_run_command(
     if let Some(dir) = additional_dir {
         docker_run.args(["-v", &format!("{}:{}:ro", dir.display(), dir.display())]);
         println!("Mounting additional directory read-only: {}", dir.display());
+        startup_log::event(format!(
+            "📁 Mounting additional directory (read-only): {}",
+            dir.display()
+        ));
     }
 
+    let mut claude_event_logged = false;
     if let Some(claude_config_dir) = get_claude_config_dir() {
         if claude_config_dir.exists() {
             docker_run.args([
@@ -348,6 +408,8 @@ fn build_run_command(
                 "Mounting Claude config from: {}",
                 claude_config_dir.display()
             );
+            startup_log::event("🔐 Syncing Claude configuration".to_string());
+            claude_event_logged = true;
         }
     }
 
@@ -368,6 +430,10 @@ fn build_run_command(
                 config_path.display(),
                 container_path
             );
+            if !claude_event_logged {
+                startup_log::event("🔐 Syncing Claude configuration".to_string());
+                claude_event_logged = true;
+            }
         }
     }
 
@@ -387,6 +453,7 @@ fn build_run_command(
                 serena_path.display(),
                 container_serena_path
             );
+            startup_log::event("🔐 Syncing Serena MCP configuration".to_string());
             break;
         }
     }
@@ -413,6 +480,12 @@ fn build_run_command(
             "Detected languages: {:?}",
             languages.iter().map(|l| l.name()).collect::<Vec<_>>()
         );
+        let summary = languages
+            .iter()
+            .map(|l| l.name())
+            .collect::<Vec<_>>()
+            .join(", ");
+        startup_log::event(format!("🧰 Detected project languages: {summary}"));
         mount_language_configs(&mut docker_run, languages, current_user);
     }
 
@@ -448,6 +521,10 @@ pub async fn create_container(
                 "Please update {} on your host to {} (or reinstall the sandbox image) to keep environments aligned.",
                 agent, image
             );
+            startup_log::warn(format!(
+                "{} version mismatch persists (host {}, sandbox {})",
+                agent, host, image
+            ));
         } else if force_rebuild {
             println!(
                 "Sandbox image {} version is now {} (matches host).",
@@ -459,6 +536,10 @@ pub async fn create_container(
             "Warning: unable to determine sandbox image version for {} after rebuild.",
             agent
         );
+        startup_log::warn(format!(
+            "Unable to determine sandbox image version for {} after rebuild",
+            agent
+        ));
     }
 
     let languages = detect_project_languages(current_dir);
@@ -470,6 +551,7 @@ pub async fn create_container(
         &current_user,
         &languages,
     )?;
+    startup_log::event(format!("🚢 Starting container daemon as {container_name}"));
     println!("Docker run command: {:?}", docker_run);
     let run_output = docker_run
         .output()
@@ -479,6 +561,10 @@ pub async fn create_container(
             "Failed to create container: {}",
             String::from_utf8_lossy(&run_output.stderr)
         );
+    }
+    startup_log::event(format!("✅ Container daemon started as {container_name}"));
+    if !languages.is_empty() {
+        startup_log::event("🧰 Verifying language toolchains inside container".to_string());
     }
     ensure_language_tools(container_name, &languages)?;
     // Persist the initial agent run command so we can reuse it on attach/continue
@@ -497,6 +583,12 @@ pub async fn create_container(
         )
         .await
     } else {
+        startup_log::finalize(StartupOutcome {
+            attach: false,
+            shell,
+            agent_command: agent.command(),
+            agent_continue: false,
+        });
         Ok(())
     }
 }
@@ -517,6 +609,7 @@ pub async fn resume_container(
 
     if !is_container_running(container_name)? {
         println!("Starting stopped container: {}", container_name);
+        startup_log::event("🚀 Starting stopped container".to_string());
         let start_output = Command::new("docker")
             .args(&["start", container_name])
             .output()
@@ -528,8 +621,10 @@ pub async fn resume_container(
                 String::from_utf8_lossy(&start_output.stderr)
             );
         }
+        startup_log::event(format!("✅ Container {} is running", container_name));
     } else {
         println!("Container is already running");
+        startup_log::event(format!("✅ Container {} is running", container_name));
     }
 
     if attach {
@@ -544,6 +639,12 @@ pub async fn resume_container(
         )
         .await
     } else {
+        startup_log::finalize(StartupOutcome {
+            attach: false,
+            shell,
+            agent_command: agent.command(),
+            agent_continue,
+        });
         Ok(())
     }
 }
@@ -585,8 +686,16 @@ async fn attach_to_container(
     let allocate_tty = atty::is(atty::Stream::Stdout) && atty::is(atty::Stream::Stdin);
     if shell {
         println!("Attaching to container shell...");
+        startup_log::event(format!(
+            "🖥️  Attaching to interactive shell in {container_name}"
+        ));
     } else {
         println!("Attaching to container and starting {}...", agent);
+        let mut message = format!("🤖 Starting {} inside {container_name}", agent.command());
+        if agent_continue {
+            message.push_str(" --continue");
+        }
+        startup_log::event(message);
     }
 
     // Try to use the originally saved agent command if available when not in shell mode
@@ -611,6 +720,7 @@ async fn attach_to_container(
 
         if !mkdir_status.success() {
             println!("Warning: Failed to create directory structure in container");
+            startup_log::warn("Failed to create directory structure in container");
         }
     }
 
@@ -655,6 +765,10 @@ async fn attach_to_container(
                     "Warning: failed to prepare session logging directory: {}",
                     err
                 );
+                startup_log::warn(format!(
+                    "Failed to prepare session logging directory: {}",
+                    err
+                ));
                 None
             }
         }
@@ -663,9 +777,23 @@ async fn attach_to_container(
             println!(
                 "Warning: 'script' command not available in container; session logging disabled."
             );
+            startup_log::warn(
+                "'script' command not available in container; session logging disabled",
+            );
         }
         None
     };
+
+    if session_logging.is_some() {
+        startup_log::event("📝 Capturing terminal session logs".to_string());
+    }
+
+    startup_log::finalize(StartupOutcome {
+        attach: true,
+        shell,
+        agent_command: agent.command(),
+        agent_continue,
+    });
 
     let attach_status = run_docker_exec_with_logging(
         container_name,
@@ -687,6 +815,11 @@ async fn attach_to_container(
                         host_log_path.display(),
                         err
                     );
+                    startup_log::warn(format!(
+                        "Failed to write session log to {}: {}",
+                        host_log_path.display(),
+                        err
+                    ));
                 } else {
                     println!("Session log saved to {}", host_log_path.display());
                 }
@@ -698,8 +831,13 @@ async fn attach_to_container(
                         "Warning: failed to capture session log from container: {}",
                         err.trim()
                     );
+                    startup_log::warn(format!(
+                        "Failed to capture session log from container: {}",
+                        err.trim()
+                    ));
                 } else {
                     println!("Warning: failed to capture session log from container");
+                    startup_log::warn("Failed to capture session log from container");
                 }
             }
             Err(err) => {
@@ -707,6 +845,10 @@ async fn attach_to_container(
                     "Warning: failed to read session log from container: {}",
                     err
                 );
+                startup_log::warn(format!(
+                    "Failed to read session log from container: {}",
+                    err
+                ));
             }
         }
 
