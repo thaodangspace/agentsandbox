@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -45,6 +46,12 @@ pub fn clear_last_container() -> Result<()> {
 fn get_base_config_dir() -> Result<PathBuf> {
     let home_dir = home::home_dir().context("Failed to get home directory")?;
     Ok(home_dir.join(".config").join("agentsandbox"))
+}
+
+fn get_image_versions_path() -> Result<PathBuf> {
+    let base_dir = get_base_config_dir()?;
+    fs::create_dir_all(&base_dir).context("Failed to ensure config directory")?;
+    Ok(base_dir.join("image_agent_versions.json"))
 }
 
 fn get_container_dir(container_name: &str) -> Result<PathBuf> {
@@ -99,4 +106,26 @@ pub fn prepare_session_log(container_name: &str) -> Result<(PathBuf, String)> {
 
     let container_path = format!("/tmp/{}", file_name);
     Ok((host_path, container_path))
+}
+
+pub fn load_image_agent_versions() -> Result<HashMap<String, String>> {
+    let path = get_image_versions_path()?;
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+
+    let data = fs::read_to_string(&path).context("Failed to read image agent versions")?;
+    let versions = serde_json::from_str::<HashMap<String, String>>(&data)
+        .context("Failed to parse image agent versions")?
+        .into_iter()
+        .map(|(k, v)| (k, v.trim().to_string()))
+        .collect();
+    Ok(versions)
+}
+
+pub fn save_image_agent_versions(versions: &HashMap<String, String>) -> Result<()> {
+    let path = get_image_versions_path()?;
+    let json = serde_json::to_string_pretty(versions)
+        .context("Failed to serialize image agent versions")?;
+    fs::write(&path, json).context("Failed to write image agent versions")
 }
