@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{Local, Utc};
 use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::env;
 use std::path::PathBuf;
@@ -63,6 +64,53 @@ fn get_container_dir(container_name: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
+fn get_session_logs_root() -> Result<PathBuf> {
+    let base = if let Some(path) = env::var_os("XDG_STATE_HOME") {
+        PathBuf::from(path)
+    } else {
+        let home_dir = home::home_dir().context("Failed to get home directory")?;
+        home_dir.join(".local").join("state")
+    };
+
+    let root = base.join("agentsandbox").join("session_logs");
+    fs::create_dir_all(&root).context("Failed to create session log state directory")?;
+    Ok(root)
+}
+
+fn ensure_session_logs_dir(container_name: &str) -> Result<PathBuf> {
+    match get_session_logs_root() {
+        Ok(root) => {
+            let candidate = root.join(container_name);
+            match fs::create_dir_all(&candidate) {
+                Ok(()) => Ok(candidate),
+                Err(state_err) => {
+                    let fallback = get_container_dir(container_name)?.join("logs");
+                    let candidate_display = candidate.display().to_string();
+                    let state_err_msg = state_err.to_string();
+                    fs::create_dir_all(&fallback).with_context(|| {
+                        format!(
+                            "Failed to create legacy session log directory after state directory creation failed at {}: {}",
+                            candidate_display, state_err_msg
+                        )
+                    })?;
+                    Ok(fallback)
+                }
+            }
+        }
+        Err(state_err) => {
+            let fallback = get_container_dir(container_name)?.join("logs");
+            let state_err_msg = state_err.to_string();
+            fs::create_dir_all(&fallback).with_context(|| {
+                format!(
+                    "Failed to create legacy session log directory after state root resolution failed: {}",
+                    state_err_msg
+                )
+            })?;
+            Ok(fallback)
+        }
+    }
+}
+
 fn get_run_command_path(container_name: &str) -> Result<PathBuf> {
     Ok(get_container_dir(container_name)?.join("run_cmd"))
 }
@@ -91,16 +139,7 @@ pub fn load_container_run_command(container_name: &str) -> Result<Option<String>
 }
 
 pub fn prepare_session_log(container_name: &str) -> Result<(PathBuf, String)> {
-    let project_dir = env::current_dir().context("Failed to get current directory for session logs")?;
-    let logs_dir = project_dir
-        .join(".agentsandbox")
-        .join("logs")
-        .join(container_name);
-    fs::create_dir_all(&logs_dir).context("Failed to create session log directory")?;
-
-    let date = Local::now().format("%Y-%m-%d").to_string();
-    let host_path = logs_dir.join(format!("{}.log", date));
-
+    let logs_dir = ensure_session_logs_dir(container_name)?;
     let timestamp = Utc::now().format("%Y%m%d-%H%M%S-%f").to_string();
     let container_path = format!("/tmp/session-{}-{}.log", container_name, timestamp);
 

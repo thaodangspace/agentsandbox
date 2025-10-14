@@ -9,6 +9,7 @@ mod config;
 mod container;
 mod language;
 mod settings;
+mod startup_log;
 mod state;
 mod worktree;
 
@@ -24,6 +25,7 @@ use container::{
     resume_container,
 };
 use settings::load_settings;
+use startup_log::{begin_session, StartupMode};
 use state::{clear_last_container, load_last_container, save_last_container};
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
@@ -62,6 +64,7 @@ async fn main() -> Result<()> {
             Some(container_name) => {
                 let agent = Agent::from_container_name(&container_name)
                     .unwrap_or_else(|| cli.agent.clone());
+                begin_session(StartupMode::Resume, &container_name, &current_dir, &agent);
                 resume_container(
                     &container_name,
                     &agent,
@@ -140,6 +143,9 @@ async fn main() -> Result<()> {
                     let (_, name, _) = &containers[num - 1];
                     let agent =
                         Agent::from_container_name(name).unwrap_or_else(|| cli.agent.clone());
+                    let attach_dir =
+                        env::current_dir().context("Failed to determine current directory")?;
+                    begin_session(StartupMode::Resume, name, &attach_dir, &agent);
                     resume_container(
                         name,
                         &agent,
@@ -235,6 +241,7 @@ async fn main() -> Result<()> {
                 let selected = &containers[num - 1];
                 let agent =
                     Agent::from_container_name(selected).unwrap_or_else(|| cli.agent.clone());
+                begin_session(StartupMode::Resume, selected, &current_dir, &agent);
                 resume_container(
                     selected,
                     &agent,
@@ -255,6 +262,7 @@ async fn main() -> Result<()> {
         if let Some(latest) = containers.first() {
             println!("Attaching to existing container for worktree: {}", latest);
             let agent = Agent::from_container_name(latest).unwrap_or_else(|| cli.agent.clone());
+            begin_session(StartupMode::Resume, latest, &current_dir, &agent);
             resume_container(
                 latest,
                 &agent,
@@ -275,6 +283,12 @@ async fn main() -> Result<()> {
 
         let agent =
             Agent::from_container_name(&existing_container).unwrap_or_else(|| cli.agent.clone());
+        begin_session(
+            StartupMode::Resume,
+            &existing_container,
+            &current_dir,
+            &agent,
+        );
         resume_container(
             &existing_container,
             &agent,
@@ -297,6 +311,13 @@ async fn main() -> Result<()> {
     };
 
     let container_name = generate_container_name(&current_dir, &cli.agent);
+
+    begin_session(
+        StartupMode::Create,
+        &container_name,
+        &current_dir,
+        &cli.agent,
+    );
 
     println!(
         "Starting {} Agent Sandbox container: {container_name}",
