@@ -1,11 +1,12 @@
 #[path = "../src/state.rs"]
 mod state;
 
+use chrono::Local;
 use state::{
     clear_last_container, load_container_run_command, load_last_container, prepare_session_log,
     save_container_run_command, save_last_container,
 };
-use std::{env, fs, path::PathBuf, sync::Mutex};
+use std::{env, path::Path, path::PathBuf, sync::Mutex};
 use tempfile::tempdir;
 
 struct TempHome {
@@ -34,6 +35,24 @@ fn setup_temp_home() -> TempHome {
         _dir: dir,
         _guard: guard,
         original,
+    }
+}
+
+struct TempCurrentDir {
+    original: PathBuf,
+}
+
+impl TempCurrentDir {
+    fn new(path: &Path) -> Self {
+        let original = env::current_dir().expect("failed to capture current dir");
+        env::set_current_dir(path).expect("failed to set current dir");
+        TempCurrentDir { original }
+    }
+}
+
+impl Drop for TempCurrentDir {
+    fn drop(&mut self) {
+        let _ = env::set_current_dir(&self.original);
     }
 }
 
@@ -79,31 +98,31 @@ fn test_load_missing_run_command() {
 }
 
 #[test]
-fn test_prepare_session_log_creates_unique_paths() {
+fn test_prepare_session_log_uses_daily_file_in_project_dir() {
     let _dir = setup_temp_home();
+    let project_dir = tempdir().expect("failed to create project dir");
+    let _current_dir = TempCurrentDir::new(project_dir.path());
     let container = "container_logs";
 
     let (first_path, first_container_path) =
         prepare_session_log(container).expect("prepare session log should succeed");
 
-    let parent = first_path
-        .parent()
-        .expect("log path should have parent directory");
-    assert_eq!(parent.file_name().and_then(|n| n.to_str()), Some("logs"));
-    assert!(parent.exists());
-    assert!(first_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .map(|name| name.starts_with("session-"))
-        .unwrap_or(false));
-    assert!(first_container_path.starts_with("/tmp/"));
+    let expected_dir = project_dir
+        .path()
+        .join(".agentsandbox")
+        .join("logs")
+        .join(container);
 
-    // Simulate a previous log to force generation of a distinct file name.
-    fs::File::create(&first_path).expect("should be able to create placeholder log file");
+    assert_eq!(first_path.parent(), Some(expected_dir.as_path()));
+    assert!(expected_dir.exists());
+    assert!(first_container_path.starts_with("/tmp/session-container_logs-"));
+
+    let expected_file_name = format!("{}.log", Local::now().format("%Y-%m-%d"));
+    assert_eq!(first_path.file_name().and_then(|n| n.to_str()), Some(expected_file_name.as_str()));
 
     let (second_path, second_container_path) =
         prepare_session_log(container).expect("prepare session log should succeed again");
 
-    assert_ne!(first_path, second_path);
+    assert_eq!(first_path, second_path);
     assert_ne!(first_container_path, second_container_path);
 }
