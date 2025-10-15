@@ -153,7 +153,7 @@ This command will:
 
 Attached to container shell.
 Use `exit` to leave the session or `ctrl+p ctrl+q` to detach without stopping it.
-Session log saved to ~/.local/state/agentsandbox/session_logs/agent-claude-sample-main-20240501-123456/session-20240501-123456.log
+Session log saved to .agentsandbox/session_logs/agent-claude-sample-main-20240501-123456/session-20240501.log
 ```
 
 </details>

@@ -1,12 +1,11 @@
 #[path = "../src/state.rs"]
 mod state;
 
-use chrono::Local;
 use state::{
     clear_last_container, load_container_run_command, load_last_container, prepare_session_log,
     save_container_run_command, save_last_container,
 };
-use std::{env, path::Path, path::PathBuf, sync::Mutex};
+use std::{env, fs, path::Path, path::PathBuf, sync::Mutex};
 use tempfile::tempdir;
 
 struct TempHome {
@@ -111,12 +110,15 @@ fn test_load_missing_run_command() {
 fn test_prepare_session_log_uses_daily_file_in_project_dir() {
     let _dir = setup_temp_home();
     let project_dir = tempdir().expect("failed to create project dir");
-    let _current_dir = TempCurrentDir::new(project_dir.path());
     let container = "container_logs";
 
     let (first_path, first_container_path) =
-        prepare_session_log(container).expect("prepare session log should succeed");
+        prepare_session_log(container, project_dir.path()).expect("prepare session log should succeed");
 
+    // Verify log is in project directory
+    assert!(first_path.starts_with(project_dir.path()));
+
+    // Verify the path structure: {project}/.agentsandbox/session_logs/{container}/session-*.log
     let parent = first_path
         .parent()
         .expect("log path should have parent directory");
@@ -133,10 +135,10 @@ fn test_prepare_session_log_uses_daily_file_in_project_dir() {
 
     let agentsandbox_dir = session_logs_dir
         .parent()
-        .expect("session logs directory should have agentsandbox parent");
+        .expect("session logs directory should have .agentsandbox parent");
     assert_eq!(
         agentsandbox_dir.file_name().and_then(|n| n.to_str()),
-        Some("agentsandbox")
+        Some(".agentsandbox")
     );
 
     assert!(first_path
@@ -150,28 +152,37 @@ fn test_prepare_session_log_uses_daily_file_in_project_dir() {
     fs::File::create(&first_path).expect("should be able to create placeholder log file");
 
     let (second_path, second_container_path) =
-        prepare_session_log(container).expect("prepare session log should succeed again");
+        prepare_session_log(container, project_dir.path()).expect("prepare session log should succeed again");
 
     assert_eq!(first_path, second_path);
     assert_ne!(first_container_path, second_container_path);
 }
 
 #[test]
-fn test_prepare_session_log_respects_xdg_state_home() {
+fn test_prepare_session_log_falls_back_to_config_dir() {
     let _dir = setup_temp_home();
-    let xdg_dir = tempdir().expect("failed to create xdg temp dir");
-    env::set_var("XDG_STATE_HOME", xdg_dir.path());
+    let project_dir = tempdir().expect("failed to create project dir");
 
-    let container = "xdg_container";
+    // Create a read-only project directory to trigger fallback
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(project_dir.path())
+            .expect("failed to get metadata")
+            .permissions();
+        perms.set_mode(0o444); // read-only
+        fs::set_permissions(project_dir.path(), perms).expect("failed to set permissions");
+    }
+
+    let container = "fallback_container";
     let (host_path, _) =
-        prepare_session_log(container).expect("prepare session log should succeed");
+        prepare_session_log(container, project_dir.path()).expect("prepare session log should succeed with fallback");
 
-    assert!(host_path.starts_with(xdg_dir.path()));
+    // Should fall back to config directory, not project directory
+    assert!(!host_path.starts_with(project_dir.path()));
 
-    let expected_root = xdg_dir
-        .path()
-        .join("agentsandbox")
-        .join("session_logs")
-        .join(container);
-    assert!(host_path.starts_with(&expected_root));
+    // Verify it's in the config directory structure
+    let path_str = host_path.display().to_string();
+    assert!(path_str.contains(".config/agentsandbox/containers"));
+    assert!(path_str.contains("logs"));
 }

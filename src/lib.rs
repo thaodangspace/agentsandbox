@@ -9,6 +9,5 @@ pub mod config;
 pub mod container;
 pub mod language;
 pub mod settings;
-pub mod startup_log;
 pub mod state;
 pub mod worktree;

@@ -230,7 +230,7 @@ fn get_container_directory(name: &str) -> Result<Option<String>> {
         }
 
         // Skip obvious config directories
-        if path.contains("/.claude") || path.contains("/.serena") {
+        if path.contains("/.claude") {
             continue;
         }
 
