@@ -4,26 +4,11 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust Version](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://www.docker.com)
+<a href="https://webuild.community">
+<img src="https://raw.githubusercontent.com/webuild-community/badge/master/svg/by.svg" alt="By Vietnamese" />
+</a>
 
-A robust Rust CLI tool that creates isolated Ubuntu Docker containers with development agents pre-installed. Agent Sandbox provides a secure, disposable environment for running AI assistants like Claude, Gemini, Codex, Qwen, and Cursor, ensuring their actions are confined to the container while maintaining a clean, reproducible workspace.
-
-## Table of Contents
-
--   [Overview](#overview)
--   [Features](#features)
--   [Demo](#demo)
--   [Prerequisites](#prerequisites)
--   [Installation](#installation)
--   [Usage](#usage)
--   [Configuration](#configuration)
--   [API](#api)
--   [Troubleshooting](#troubleshooting)
--   [Contributing](#contributing)
--   [License](#license)
-
-## Overview
-
-### Why Sandbox an AI Agent?
+## Why Sandbox an AI Agent?
 
 Running an AI agent with direct access to your host machine is risky. An agent could inadvertently or maliciously:
 
@@ -37,212 +22,118 @@ Using an isolated container provides critical benefits:
 -   **Integrity**: Ensures a clean, reproducible workspace with all dependencies installed from scratch.
 -   **Flexibility**: Makes it easy to experiment with untrusted code or dependencies and then discard the container when finished.
 
-## Demo
-
-[![Watch the video](https://img.youtube.com/vi/HghV3XvWKBQ/maxresdefault.jpg)](https://youtu.be/HghV3XvWKBQ)
-
-## Features
-
-### Core Functionality
+## Highlights
 
 -   **Multi-Agent Support**: Compatible with Claude, Gemini, Codex, Qwen, and Cursor development agents
 -   **Automatic Workspace Mounting**: Seamlessly mounts your current directory to same path with the host machine in the container
 -   **Node Modules Isolation**: For Node.js projects, `node_modules` is overlaid with a container-only volume. Existing host `node_modules` are copied to the container on first run to accelerate setup.
 -   **Configuration Management**: Automatically copies and applies your agent configurations
--   **Intelligent Naming**: Generates contextual container names to prevent conflicts (`agent-{agent}-{dir}-{branch}-{yymmddhhmm}`)
 -   **Language Tooling**: Detects common project languages and installs missing package managers like Cargo, npm, pip, Composer, Go, or Bundler
 
-### Workflow Management
+## Demo
 
--   **Session Continuity**: Resume your last container session with `agentsandbox --continue`
--   **Global Container Listing**: List all running sandbox containers across all projects with `agentsandbox ps`
--   **Git Integration**: Create and use git worktrees for isolated branch development
--   **Cleanup Utilities**: Efficient container management and cleanup tools
--   **Directory Mounting**: Add additional read-only directories for extended workspace access
+[![Watch the video](https://img.youtube.com/vi/HghV3XvWKBQ/maxresdefault.jpg)](https://youtu.be/HghV3XvWKBQ)
 
-## Prerequisites
+## Requirements
 
-### System Requirements
+-   Docker 20.10+ (running and accessible to your user)
+-   Rust 1.70+ (only required for building or `cargo install`)
+-   Git
+-   Linux, macOS (Intel or Apple Silicon), or Windows via WSL2 + Docker Desktop
 
--   **Docker**: Version 20.10 or higher, installed and running
--   **Rust**: Version 1.70 or higher (for building from source)
--   **Git**: For repository cloning and worktree functionality
+## Quick Start
 
-### Platform Support
-
--   Linux (tested on Ubuntu 20.04+, Fedora 35+)
--   macOS (Intel and Apple Silicon)
--   Windows (with WSL2 and Docker Desktop)
+1. `cd` into the project you want to explore.
+2. Run `agentsandbox`.
+3. The tool builds a fresh Ubuntu container, mounts the current directory at `/workspace`, copies your agent configuration (for example `~/.claude`), and launches the default agent.
 
 ## Installation
 
-### Method 1: Install via Homebrew (macOS/Linux - Recommended)
+### Homebrew (macOS/Linux)
 
 ```bash
-# Add the tap (replace with actual repository URL)
-brew tap your-username/agentsandbox
-
-# Install agentsandbox
+brew tap thaodangspace/agentsandbox
 brew install agentsandbox
 ```
 
-### Method 2: Build from Source
+### Cargo
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/code-sandbox.git
-cd code-sandbox
-
-# Build the release binary
-cargo build --release
-
-# Install globally (optional)
-sudo cp target/release/agentsandbox /usr/local/bin/
-```
-
-### Method 3: Install via Cargo
-
-```bash
-# Install directly from the local repository
 cargo install --path .
-
-# Or install from crates.io (when published)
+# or, when published:
 cargo install agentsandbox
 ```
 
-### Method 4: Download Pre-built Binaries
-
-Visit the [Releases](https://github.com/your-org/code-sandbox/releases) page to download pre-built binaries for your platform.
-
-### Method 5: Install via npm
+### Build from Source
 
 ```bash
-npm install -g @thaodangspace/agent-sandbox
+git clone https://github.com/thaodangspace/agentsandbox.git
+cd agentsandbox
+cargo build --release
+sudo cp target/release/agentsandbox /usr/local/bin/  # optional
 ```
 
-This compiles the CLI using Rust and exposes a `agentsandbox` command via npm.
+This compiles the Rust CLI and exposes it as the `agentsandbox` command inside npm-based environments.
 
-## Usage
+### Pre-built Binaries
 
-### Quick Start
+Download the latest release for your platform from the [Releases](https://github.com/thaodangspace/agentsandbox/releases) page.
 
-Navigate to your project directory and run:
+## Everyday Usage
+
+### Start the default agent
 
 ```bash
 agentsandbox
 ```
 
-This command will:
-
-1. **Create a Container**: Generate a new Ubuntu container with a unique identifier
-2. **Mount Workspace**: Bind your current directory to `/workspace` in the container
-3. **Configure Agent**: Copy your agent configuration files (e.g., `.claude` from `~/.claude`)
-4. **Launch Agent**: Start the default agent (Claude) within the container environment
-
-<details>
-<summary><strong>See a sample startup log</strong></summary>
-
-```text
-╭───────────────────────────── Agent Sandbox ─────────────────────────────╮
-│ 📦 Preparing container: agent-claude-sample-main-20240501-123456         │
-│ 🔐 Syncing Claude configuration                                         │
-│ 🛠️  Installing developer tooling                                        │
-│ 🔁 Mounting /workspace from your host                                   │
-│ 🤖 Launching claude --continue                                          │
-╰────────────────────────────────────────────────────────────────────────╯
-
-Attached to container shell.
-Use `exit` to leave the session or `ctrl+p ctrl+q` to detach without stopping it.
-Session log saved to .agentsandbox/session_logs/agent-claude-sample-main-20240501-123456/session-20240501.log
-```
-
-</details>
-
-### Advanced Usage
-
-#### Specify a Different Agent
+### Launch a specific agent
 
 ```bash
-# Use Qwen instead of Claude
 agentsandbox --agent qwen
-
-# Use Gemini
 agentsandbox --agent gemini
-
-# Use Cursor
 agentsandbox --agent cursor
 ```
 
-#### Mount Additional Directories
+### Mount extra directories (read-only)
 
 ```bash
-# Add a read-only reference directory
-agentsandbox --add_dir /path/to/reference/repo
+agentsandbox --add-dir /path/to/reference/repo
 ```
 
-#### Session Management
+### Manage sessions
 
 ```bash
-# Resume the last container from this directory
-agentsandbox --continue
-
-# List containers for the current directory and optionally attach
-agentsandbox ls
-
-# List all running containers across all projects
-agentsandbox ps
+agentsandbox --continue   # resume the last container for this directory
+agentsandbox ls           # list containers tied to the current directory
+agentsandbox ps           # list every running sandbox across directories
 ```
 
-#### Git Workflow Integration
+### Shell access only
 
 ```bash
-# Create and use a git worktree for isolated branch work
-agentsandbox --worktree feature-branch
+agentsandbox --shell
 ```
 
-## Connecting to the Container
-
-After the container is created, you can connect to it using:
+### Attach with Docker
 
 ```bash
 docker exec -it <container-name> /bin/bash
 ```
 
-The container name will be displayed when `agentsandbox` runs.
+The container name appears in the startup log (format: `agent-{agent}-{dir}-{branch}-{timestamp}`).
 
-## Listing Existing Containers
+## Container Layout
 
-List all sandbox containers created from the **current directory** and optionally attach to one:
-
-```bash
-agentsandbox ls
-```
-
-To list all running sandbox containers across all directories, use:
-
-```bash
-agentsandbox ps
-```
-
-This view also allows you to `cd` directly into the project directory associated with a container.
-
-### Container Contents
-
--   **Base**: Ubuntu 22.04
--   **Tools**: curl, wget, git, build-essential, python3, nodejs, npm
--   **User**: `ubuntu` with sudo privileges
--   **Agent**: Claude Code pre-installed (other agents can be started if available)
--   **Working Directory**: `/workspace` (your mounted folder)
+-   Base image: Ubuntu 22.04
+-   User: `ubuntu` (sudo-enabled)
+-   Mounted workspace: `/workspace`
+-   Tooling: curl, wget, git, build-essential, python3, nodejs, npm
+-   Agents: Claude Code pre-installed (others start when requested)
 
 ## Configuration
 
-The tool automatically detects and mounts your Claude configuration from:
-
--   `~/.claude` (standard location)
--   `$XDG_CONFIG_HOME/claude` (XDG standard)
-
-Additional behavior can be configured via `settings.json` located at
-`~/.config/agentsandbox/settings.json`. Example:
+Agent Sandbox automatically looks for Claude configuration in `~/.claude` or `$XDG_CONFIG_HOME/claude`. Global settings live at `~/.config/agentsandbox/settings.json`, for example:
 
 ```json
 {
@@ -263,202 +154,49 @@ Additional behavior can be configured via `settings.json` located at
 }
 ```
 
-The `skip_permission_flags` map assigns a permission-skipping flag to each
-agent. When launching an agent, the corresponding flag is appended to the
-command.
+Environment files listed under `env_files` are shadowed by empty overlays inside the container so secrets never leave your host machine.
 
-Environment files listed in `env_files` that exist in the project directory are
-masked from the container by overlaying them with empty temporary files,
-keeping sensitive data on the host.
-
-## Shell Access
-
-To start a container without launching an agent and open a shell:
+## Maintenance
 
 ```bash
-agentsandbox --shell
-```
-
-## Cleanup
-
-To remove all containers created from the current directory:
-
-```bash
-agentsandbox cleanup
-```
-
-To remove the built image:
-
-```bash
+agentsandbox cleanup        # remove containers created from the current directory
 docker rmi agentsandbox-image
 ```
 
-## Troubleshooting
+## Development & Contributing
 
--   **Docker not found**: Ensure Docker is installed and running
--   **Permission denied**: Make sure your user is in the `docker` group
--   **Agent fails to start**: You can manually start it with `docker exec -it <container> <agent>`
-
-## Contributing
-
-We welcome contributions to Agent Sandbox! Here's how you can help:
-
-### Getting Started
-
-1. **Fork the repository** on GitHub
-2. **Clone your fork** locally:
+1. Fork the repository and clone your fork:
     ```bash
-    git clone https://github.com/thaodangspace/code-sandbox.git
-    cd code-sandbox
+    git clone https://github.com/thaodangspace/agentsandbox.git
+    cd agentsandbox
     ```
-3. **Create a feature branch** from `main`:
-    ```bash
-    git checkout -b feature/your-feature-name
-    ```
-
-### Development Setup
-
-1. **Install Rust** (if not already installed):
-
-    ```bash
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-    ```
-
-2. **Install dependencies** and build:
-
+2. Build and test:
     ```bash
     cargo build
-    ```
-
-3. **Run tests**:
-    ```bash
     cargo test
+    cargo fmt --all
+    cargo clippy -- -D warnings
     ```
-
-### Building for Different Platforms
-
-For **local development**, use the provided build script:
-
-```bash
-# Build for native target in debug mode
-./scripts/build.sh
-
-# Build for native target in release mode
-./scripts/build.sh --release
-
-# Show all available options
-./scripts/build.sh --help
-```
-
-For **cross-compilation**:
-
--   **GitHub Actions**: The repository automatically builds for all platforms (Linux, macOS, Windows) when you push tags or trigger the workflow manually
--   **Local cross-compilation**:
-    -   Linux builds work natively
-    -   Windows builds require `mingw-w64` toolchain
-    -   macOS builds from Linux require [osxcross](https://github.com/tpoechtrager/osxcross) toolchain
-
-```bash
-# Install Rust targets for cross-compilation
-rustup target add x86_64-pc-windows-gnu
-rustup target add x86_64-apple-darwin
-rustup target add aarch64-apple-darwin
-
-# Cross-compile (requires appropriate toolchain)
-cargo build --release --target x86_64-pc-windows-gnu
-```
-
-**Note**: The `reqwest` dependency has been configured with `rustls-tls` instead of native TLS for better cross-compilation support.
-
-### Building for NPM Distribution
-
-For building binaries ready for npm publishing:
-
-```bash
-# Build for npm distribution (attempts Linux + macOS targets)
-npm run build
-# or
-./scripts/build.sh --npm
-
-# Build individual targets for npm
-npm run build:linux      # Build for Linux x64
-npm run build:macos      # Build for macOS x64
-npm run build:macos-arm  # Build for macOS ARM64
-```
-
-The build script will:
-
--   Compile in release mode
--   Copy binaries to `dist/` with npm-compatible naming
--   Handle missing cross-compilation toolchains gracefully
-
-**Supported platforms for npm distribution:**
-
--   `linux-x64` → `agentsandbox-linux-x64`
--   `darwin-x64` → `agentsandbox-darwin-x64`
--   `darwin-arm64` → `agentsandbox-darwin-arm64`
--   `win32` → `agentsandbox.exe`
-
-### Making Changes
-
--   **Follow Rust conventions**: Use `cargo fmt` and `cargo clippy`
--   **Write tests** for new functionality
--   **Update documentation** as needed
--   **Keep commits atomic** and write clear commit messages
-
-### Submitting Changes
-
-1. **Push your changes** to your fork:
-
+3. Use the helper script for release builds or cross-compilation:
     ```bash
-    git push origin feature/your-feature-name
+    ./scripts/build.sh            # debug
+    ./scripts/build.sh --release  # optimized
+    ./scripts/build.sh --npm      # produce binaries for npm publish
     ```
+    Additional targets can be enabled via `rustup target add <triple>` (for example `x86_64-pc-windows-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`).
+4. Push your branch and open a pull request with a clear description, linked issues, and validation steps.
 
-2. **Create a Pull Request** with:
-    - Clear description of the changes
-    - Reference to any related issues
-    - Screenshots/demos for UI changes
+## Troubleshooting
 
-### Code Style
-
--   Follow the existing code style
--   Run `cargo fmt` before committing
--   Ensure `cargo clippy` passes without warnings
--   Add documentation for public APIs
-
-### Reporting Issues
-
-When reporting bugs, please include:
-
--   Operating system and version
--   Docker version
--   Rust version (`rustc --version`)
--   Steps to reproduce the issue
--   Expected vs actual behavior
-
-### Feature Requests
-
-For new features:
-
--   Check existing issues first
--   Clearly describe the use case
--   Propose the API/interface if applicable
--   Consider backward compatibility
-
-Thank you for contributing to Agent Sandbox!
+-   **Docker not found**: confirm Docker Desktop/daemon is running and you are in the `docker` group.
+-   **Permission errors**: re-log after adding yourself to the `docker` group or run with elevated privileges.
+-   **Agent fails to launch**: use `docker exec -it <container-name> <agent>` to inspect the container and logs.
+-   **Slow startup**: first run may copy dependencies like `node_modules`; subsequent runs reuse the cached overlay volume.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-### MIT License Summary
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+Licensed under the MIT License. See [LICENSE](LICENSE) for full text.
 
 ---
 
-**Made with ❤️ by the Agent Sandbox contributors**
+Made with ❤️ by the Agent Sandbox contributors.

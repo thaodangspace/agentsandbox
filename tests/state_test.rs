@@ -112,8 +112,8 @@ fn test_prepare_session_log_uses_daily_file_in_project_dir() {
     let project_dir = tempdir().expect("failed to create project dir");
     let container = "container_logs";
 
-    let (first_path, first_container_path) =
-        prepare_session_log(container, project_dir.path()).expect("prepare session log should succeed");
+    let (first_path, first_container_path) = prepare_session_log(container, project_dir.path())
+        .expect("prepare session log should succeed");
 
     // Verify log is in project directory
     assert!(first_path.starts_with(project_dir.path()));
@@ -151,8 +151,8 @@ fn test_prepare_session_log_uses_daily_file_in_project_dir() {
     // Simulate a previous log to force generation of a distinct file name.
     fs::File::create(&first_path).expect("should be able to create placeholder log file");
 
-    let (second_path, second_container_path) =
-        prepare_session_log(container, project_dir.path()).expect("prepare session log should succeed again");
+    let (second_path, second_container_path) = prepare_session_log(container, project_dir.path())
+        .expect("prepare session log should succeed again");
 
     assert_eq!(first_path, second_path);
     assert_ne!(first_container_path, second_container_path);
@@ -175,8 +175,8 @@ fn test_prepare_session_log_falls_back_to_config_dir() {
     }
 
     let container = "fallback_container";
-    let (host_path, _) =
-        prepare_session_log(container, project_dir.path()).expect("prepare session log should succeed with fallback");
+    let (host_path, _) = prepare_session_log(container, project_dir.path())
+        .expect("prepare session log should succeed with fallback");
 
     // Should fall back to config directory, not project directory
     assert!(!host_path.starts_with(project_dir.path()));

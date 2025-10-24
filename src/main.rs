@@ -20,7 +20,8 @@ use std::io::{self, Write};
 
 use cli::{Agent, Cli, Commands};
 use clipboard::{
-    clear_watcher_pid, ensure_clipboard_dir, is_process_running, load_watcher_pid, save_watcher_pid,
+    clear_watcher_pid, clipboard_feature_enabled, ensure_clipboard_dir, is_process_running,
+    load_watcher_pid, save_watcher_pid,
 };
 use container::{
     auto_remove_old_containers, check_docker_availability, cleanup_containers, create_container,
@@ -32,6 +33,9 @@ use state::{clear_last_container, load_last_container, save_last_container};
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
 use worktree::create_worktree;
+
+// Embed the clipboard watcher script at compile time
+const CLIPBOARD_WATCHER_SCRIPT: &str = include_str!("../scripts/clipboard-watcher.sh");
 
 /// Start the clipboard watcher if it's not already running
 fn ensure_clipboard_watcher_running() -> Result<()> {
@@ -49,25 +53,26 @@ fn ensure_clipboard_watcher_running() -> Result<()> {
     // Ensure clipboard directory exists
     ensure_clipboard_dir()?;
 
-    // Find the clipboard watcher script
-    let script_path = if let Ok(exe_path) = env::current_exe() {
-        // Try to find script relative to executable
-        let exe_dir = exe_path.parent().context("Failed to get executable directory")?;
-        let candidate = exe_dir.join("../scripts/clipboard-watcher.sh");
-        if candidate.exists() {
-            candidate
-        } else {
-            // Fallback to local scripts directory (for development)
-            env::current_dir()?.join("scripts/clipboard-watcher.sh")
-        }
-    } else {
-        env::current_dir()?.join("scripts/clipboard-watcher.sh")
-    };
+    // Write the embedded script to the state directory
+    let home_dir = home::home_dir().context("Failed to get home directory")?;
+    let state_dir = home_dir.join(".config").join("agentsandbox");
+    fs::create_dir_all(&state_dir)?;
 
-    if !script_path.exists() {
-        println!("Warning: Clipboard watcher script not found at {:?}", script_path);
-        println!("Clipboard sharing will not be available");
-        return Ok(());
+    let script_path = state_dir.join("clipboard-watcher.sh");
+    fs::write(&script_path, CLIPBOARD_WATCHER_SCRIPT).with_context(|| {
+        format!(
+            "Failed to write clipboard watcher script to {:?}",
+            script_path
+        )
+    })?;
+
+    // Make the script executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&script_path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script_path, perms)?;
     }
 
     // Start the clipboard watcher as a background process
@@ -81,7 +86,9 @@ fn ensure_clipboard_watcher_running() -> Result<()> {
     let pid = child.id();
     save_watcher_pid(pid)?;
     println!("Clipboard watcher started (PID: {})", pid);
-    println!("Images copied to clipboard will be available at /workspace/.clipboard/ in the container");
+    println!(
+        "Images copied to clipboard will be available at /workspace/.clipboard/ in the container"
+    );
 
     Ok(())
 }
@@ -99,11 +106,15 @@ async fn main() -> Result<()> {
     check_docker_availability()?;
     auto_remove_old_containers(settings.auto_remove_minutes.unwrap_or(60))?;
 
-    // Start clipboard watcher for image sharing between host and container
-    if !cli.no_clipboard {
+    let clipboard_enabled = clipboard_feature_enabled();
+
+    // Start clipboard watcher for image sharing between host and container when available
+    if clipboard_enabled && !cli.no_clipboard {
         if let Err(e) = ensure_clipboard_watcher_running() {
             println!("Warning: Failed to start clipboard watcher: {}", e);
         }
+    } else if !clipboard_enabled && !cli.no_clipboard {
+        println!("Clipboard sharing is temporarily disabled due to known issues.");
     }
 
     let skip_permission_flag = settings

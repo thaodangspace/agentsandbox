@@ -2,6 +2,13 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Returns whether the clipboard integration is currently enabled.
+///
+/// The feature is temporarily disabled due to stability issues.
+pub fn clipboard_feature_enabled() -> bool {
+    false
+}
+
 /// Get the clipboard directory path (~/.config/agentsandbox/clipboard)
 pub fn get_clipboard_dir() -> Result<PathBuf> {
     let home_dir = home::home_dir().context("Failed to get home directory")?;
@@ -15,8 +22,12 @@ pub fn get_clipboard_dir() -> Result<PathBuf> {
 /// Ensure the clipboard directory exists
 pub fn ensure_clipboard_dir() -> Result<PathBuf> {
     let clipboard_dir = get_clipboard_dir()?;
-    fs::create_dir_all(&clipboard_dir)
-        .with_context(|| format!("Failed to create clipboard directory at {:?}", clipboard_dir))?;
+    fs::create_dir_all(&clipboard_dir).with_context(|| {
+        format!(
+            "Failed to create clipboard directory at {:?}",
+            clipboard_dir
+        )
+    })?;
     Ok(clipboard_dir)
 }
 

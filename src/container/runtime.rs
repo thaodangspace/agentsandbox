@@ -7,7 +7,7 @@ use std::process::{Command, ExitStatus};
 use tempfile::NamedTempFile;
 
 use crate::cli::Agent;
-use crate::clipboard::ensure_clipboard_dir;
+use crate::clipboard::{clipboard_feature_enabled, ensure_clipboard_dir};
 use crate::config::{get_claude_config_dir, get_claude_json_paths};
 use crate::language::{
     detect_project_languages, ensure_language_tools, sync_node_modules_from_host, ProjectLanguage,
@@ -180,7 +180,7 @@ fn capture_agent_versions_from_image() -> Result<HashMap<String, String>> {
     Ok(versions)
 }
 
-fn evaluate_agent_version_status(agent: &Agent) -> Result<(Option<String>, Option<String>, bool)> {
+fn evaluate_all_agent_versions() -> Result<Vec<Agent>> {
     let recorded_versions = load_image_agent_versions().unwrap_or_else(|err| {
         println!(
             "Warning: failed to read cached agent version information: {}",
@@ -188,45 +188,62 @@ fn evaluate_agent_version_status(agent: &Agent) -> Result<(Option<String>, Optio
         );
         HashMap::new()
     });
-    let image_version = recorded_versions
-        .get(agent.command())
-        .map(|v| v.to_string());
-    let host_version = detect_host_agent_version(agent);
-    let mut force_rebuild = false;
 
-    match (&host_version, &image_version) {
-        (Some(host), Some(image)) if !versions_match(host, image) => {
-            println!(
-                "Detected {} version mismatch between host ({}) and sandbox image ({}).",
-                agent, host, image
-            );
-            println!(
-                "Rebuilding the sandbox image to refresh {}. After the rebuild, please update the environment that remains out of sync.",
-                agent
-            );
-            force_rebuild = true;
+    let all_agents = [
+        Agent::Claude,
+        Agent::Gemini,
+        Agent::Codex,
+        Agent::Qwen,
+        Agent::Cursor,
+    ];
+
+    let mut agents_to_rebuild = Vec::new();
+
+    for agent in &all_agents {
+        let image_version = recorded_versions.get(agent.command());
+        let host_version = detect_host_agent_version(agent);
+
+        let needs_rebuild = match (&host_version, image_version) {
+            (Some(host), Some(image)) if !versions_match(host, image) => {
+                println!(
+                    "Detected {} version mismatch between host ({}) and sandbox image ({}).",
+                    agent, host, image
+                );
+                true
+            }
+            (Some(host), None) => {
+                println!(
+                    "No recorded {} version for sandbox image (host reports {}).",
+                    agent, host
+                );
+                true
+            }
+            (None, None) => {
+                println!(
+                    "Unable to determine {} version on host or sandbox image.",
+                    agent
+                );
+                true
+            }
+            _ => false,
+        };
+
+        if needs_rebuild {
+            agents_to_rebuild.push(agent.clone());
         }
-        (Some(host), None) => {
-            println!(
-                "No recorded {} version for sandbox image. Rebuilding image to capture version information (host reports {}).",
-                agent, host
-            );
-            force_rebuild = true;
-        }
-        (None, None) => {
-            println!(
-                "Unable to determine {} version on host or sandbox image. Rebuilding image to capture version information.",
-                agent
-            );
-            force_rebuild = true;
-        }
-        _ => {}
     }
 
-    Ok((host_version, image_version, force_rebuild))
+    if !agents_to_rebuild.is_empty() {
+        println!(
+            "Rebuilding sandbox image to refresh: {:?}",
+            agents_to_rebuild
+        );
+    }
+
+    Ok(agents_to_rebuild)
 }
 
-fn build_docker_image(current_user: &str, force_rebuild: bool) -> Result<HashMap<String, String>> {
+fn build_docker_image(current_user: &str, agents_to_rebuild: &[Agent]) -> Result<HashMap<String, String>> {
     // Determine host UID/GID so the container user matches host permissions
     let uid_output = Command::new("id")
         .arg("-u")
@@ -253,7 +270,7 @@ fn build_docker_image(current_user: &str, force_rebuild: bool) -> Result<HashMap
 
     println!(
         "Building Docker image{}...",
-        if force_rebuild {
+        if !agents_to_rebuild.is_empty() {
             " (refreshing agent versions)"
         } else {
             ""
@@ -263,16 +280,21 @@ fn build_docker_image(current_user: &str, force_rebuild: bool) -> Result<HashMap
     build_command.arg("build");
     build_command.arg("-t");
     build_command.arg("agentsandbox-image");
-    if force_rebuild {
-        // Use build arg to invalidate only agent layers, keeping base layers cached
+
+    if !agents_to_rebuild.is_empty() {
+        // Use per-agent build args to invalidate only specific agent layers
         let cache_bust = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs()
             .to_string();
-        build_command.arg("--build-arg");
-        build_command.arg(format!("AGENT_CACHE_BUST={}", cache_bust));
+
+        for agent in agents_to_rebuild {
+            build_command.arg("--build-arg");
+            build_command.arg(format!("{}={}", agent.cache_arg(), cache_bust));
+        }
     }
+
     build_command.arg("-f");
     build_command.arg(dockerfile_path.to_str().unwrap());
     build_command.arg(".");
@@ -421,17 +443,19 @@ fn build_run_command(
     }
 
     // Mount clipboard directory (read-only)
-    if let Ok(clipboard_dir) = ensure_clipboard_dir() {
-        docker_run.args([
-            "-v",
-            &format!("{}:/workspace/.clipboard:ro", clipboard_dir.display()),
-        ]);
-        println!(
-            "Mounting clipboard directory: {} -> /workspace/.clipboard",
-            clipboard_dir.display()
-        );
-    } else {
-        println!("Warning: Failed to setup clipboard directory, clipboard sharing will not be available");
+    if clipboard_feature_enabled() {
+        if let Ok(clipboard_dir) = ensure_clipboard_dir() {
+            docker_run.args([
+                "-v",
+                &format!("{}:/workspace/.clipboard:ro", clipboard_dir.display()),
+            ]);
+            println!(
+                "Mounting clipboard directory: {} -> /workspace/.clipboard",
+                clipboard_dir.display()
+            );
+        } else {
+            println!("Warning: Failed to setup clipboard directory, clipboard sharing will not be available");
+        }
     }
 
     docker_run.args(["agentsandbox-image", "/bin/bash"]);
@@ -449,14 +473,16 @@ pub async fn create_container(
     attach: bool,
 ) -> Result<()> {
     let current_user = env::var("USER").unwrap_or_else(|_| "ubuntu".to_string());
-    let (host_version, image_version_before, force_rebuild) = evaluate_agent_version_status(agent)?;
-    let image_versions = build_docker_image(&current_user, force_rebuild)?;
-    let mut image_version = image_versions.get(agent.command()).cloned();
-    if image_version.is_none() {
-        image_version = image_version_before;
-    }
 
-    if let (Some(host), Some(image)) = (&host_version, image_version.as_ref()) {
+    // Check all agent versions to determine which need rebuilding
+    let agents_to_rebuild = evaluate_all_agent_versions()?;
+    let image_versions = build_docker_image(&current_user, &agents_to_rebuild)?;
+
+    // Check the current agent's version for informational messages
+    let host_version = detect_host_agent_version(agent);
+    let image_version = image_versions.get(agent.command()).cloned();
+
+    if let (Some(host), Some(image)) = (&host_version, &image_version) {
         if !versions_match(host, image) {
             println!(
                 "Warning: {} version mismatch persists (host: {}, sandbox image: {}).",
@@ -466,7 +492,7 @@ pub async fn create_container(
                 "Please update {} on your host to {} (or reinstall the sandbox image) to keep environments aligned.",
                 agent, image
             );
-        } else if force_rebuild {
+        } else if agents_to_rebuild.contains(agent) {
             println!(
                 "Sandbox image {} version is now {} (matches host).",
                 agent, image
@@ -814,6 +840,43 @@ fn run_docker_exec_with_logging(
 }
 
 fn create_dockerfile_content(user: &str, uid: u32, gid: u32) -> String {
+    let clipboard_helper_snippet = if clipboard_feature_enabled() {
+        String::from(
+            r#"
+# Install clipboard helper utility
+USER root
+RUN cat > /usr/local/bin/clipboard << 'CLIPBOARD_EOF'
+#!/bin/bash
+CLIPBOARD_DIR="/workspace/.clipboard"
+get_latest() {{
+    if [ ! -d "$CLIPBOARD_DIR" ]; then
+        echo "Error: Clipboard directory not found" >&2
+        return 1
+    fi
+    if [ -L "$CLIPBOARD_DIR/latest" ]; then
+        echo "$CLIPBOARD_DIR/latest"
+        return 0
+    fi
+    local latest=$(find "$CLIPBOARD_DIR" -maxdepth 1 -type f \( -name "clipboard-*.png" -o -name "clipboard-*.jpg" -o -name "clipboard-*.jpeg" \) -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n 1 | cut -d' ' -f2-)
+    if [ -z "$latest" ]; then
+        echo "No clipboard images found" >&2
+        return 1
+    fi
+    echo "$latest"
+}}
+case "${{1:-latest}}" in
+    latest) get_latest ;;
+    list) find "$CLIPBOARD_DIR" -maxdepth 1 -type f \( -name "clipboard-*.png" -o -name "clipboard-*.jpg" \) 2>/dev/null | sort -r ;;
+    *) echo "Usage: clipboard [latest|list]" >&2; exit 1 ;;
+esac
+CLIPBOARD_EOF
+RUN chmod +x /usr/local/bin/clipboard
+"#,
+        )
+    } else {
+        String::new()
+    };
+
     format!(
         r#"FROM ubuntu:24.04
 
@@ -872,26 +935,11 @@ RUN set -eux; \
     fi; \
     echo "{user} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 ENV HOME=/home/{user}
-USER root
-
-# Cache-busting arg: change this to invalidate only agent installation layers
-# All layers above remain cached (Ubuntu, Node, Go, Rust, user setup)
-ARG AGENT_CACHE_BUST=default
-RUN echo "Agent cache bust: ${{AGENT_CACHE_BUST}}"
-
-# Install Claude Code
-RUN npm install -g @anthropic-ai/claude-code
-RUN npm install -g @google/gemini-cli
-RUN npm install -g @openai/codex
-RUN npm install -g @qwen-code/qwen-code@latest
-
-# Install Cursor CLI
-RUN curl https://cursor.com/install -fsS | bash
 
 # Prepare home directory and user-local bin
 RUN mkdir -p /home/{user}/.local/bin && chown -R {user}:{user} /home/{user}
 
-# Switch to user
+# Switch to user for user-specific installations
 USER {user}
 WORKDIR /home/{user}
 
@@ -910,34 +958,32 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 RUN echo 'export PATH="/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"' >> ~/.bashrc && \
     echo 'source ~/.cargo/env' >> ~/.bashrc
 
-# Install clipboard helper utility
+# Switch back to root for agent installations
 USER root
-RUN cat > /usr/local/bin/clipboard << 'CLIPBOARD_EOF'
-#!/bin/bash
-CLIPBOARD_DIR="/workspace/.clipboard"
-get_latest() {{
-    if [ ! -d "$CLIPBOARD_DIR" ]; then
-        echo "Error: Clipboard directory not found" >&2
-        return 1
-    fi
-    if [ -L "$CLIPBOARD_DIR/latest" ]; then
-        echo "$CLIPBOARD_DIR/latest"
-        return 0
-    fi
-    local latest=$(find "$CLIPBOARD_DIR" -maxdepth 1 -type f \( -name "clipboard-*.png" -o -name "clipboard-*.jpg" -o -name "clipboard-*.jpeg" \) -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n 1 | cut -d' ' -f2-)
-    if [ -z "$latest" ]; then
-        echo "No clipboard images found" >&2
-        return 1
-    fi
-    echo "$latest"
-}}
-case "${{1:-latest}}" in
-    latest) get_latest ;;
-    list) find "$CLIPBOARD_DIR" -maxdepth 1 -type f \( -name "clipboard-*.png" -o -name "clipboard-*.jpg" \) 2>/dev/null | sort -r ;;
-    *) echo "Usage: clipboard [latest|list]" >&2; exit 1 ;;
-esac
-CLIPBOARD_EOF
-RUN chmod +x /usr/local/bin/clipboard
+
+# Per-agent cache-busting: install agents in order from least to most frequently updated
+# Changing a cache-bust value only invalidates that agent and all agents after it
+
+# Install Cursor CLI
+ARG CURSOR_CACHE_BUST=default
+RUN echo "Cursor cache: ${{CURSOR_CACHE_BUST}}" && curl https://cursor.com/install -fsS | bash
+
+# Install Qwen
+ARG QWEN_CACHE_BUST=default
+RUN echo "Qwen cache: ${{QWEN_CACHE_BUST}}" && npm install -g @qwen-code/qwen-code@latest
+
+# Install Codex
+ARG CODEX_CACHE_BUST=default
+RUN echo "Codex cache: ${{CODEX_CACHE_BUST}}" && npm install -g @openai/codex
+
+# Install Gemini
+ARG GEMINI_CACHE_BUST=default
+RUN echo "Gemini cache: ${{GEMINI_CACHE_BUST}}" && npm install -g @google/gemini-cli
+
+# Install Claude Code (most frequently updated, so last)
+ARG CLAUDE_CACHE_BUST=default
+RUN echo "Claude cache: ${{CLAUDE_CACHE_BUST}}" && npm install -g @anthropic-ai/claude-code
+{clipboard_helper_snippet}
 USER {user}
 
 # Set working directory to home
@@ -948,6 +994,7 @@ CMD ["/bin/bash"]
 "#,
         user = user,
         uid = uid,
-        gid = gid
+        gid = gid,
+        clipboard_helper_snippet = clipboard_helper_snippet
     )
 }

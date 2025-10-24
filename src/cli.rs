@@ -26,7 +26,10 @@ pub struct Cli {
     #[arg(long, help = "Attach to container shell without starting the agent")]
     pub shell: bool,
 
-    #[arg(long, help = "Disable clipboard image sharing between host and container")]
+    #[arg(
+        long,
+        help = "Disable clipboard image sharing between host and container"
+    )]
     pub no_clipboard: bool,
 
     #[arg(
@@ -68,6 +71,16 @@ impl Agent {
             Agent::Codex => "codex",
             Agent::Qwen => "qwen",
             Agent::Cursor => "cursor-agent",
+        }
+    }
+
+    pub fn cache_arg(&self) -> &'static str {
+        match self {
+            Agent::Claude => "CLAUDE_CACHE_BUST",
+            Agent::Gemini => "GEMINI_CACHE_BUST",
+            Agent::Codex => "CODEX_CACHE_BUST",
+            Agent::Qwen => "QWEN_CACHE_BUST",
+            Agent::Cursor => "CURSOR_CACHE_BUST",
         }
     }
 

@@ -79,6 +79,10 @@ Containers are created with:
 
 ## Clipboard Image Sharing
 
+> **Note:** Clipboard sharing is temporarily disabled while we investigate stability issues. The CLI prints a warning and skips mounting the clipboard directory regardless of the `--no-clipboard` flag.
+
+The information below captures the intended workflow once the feature returns.
+
 agentsandbox supports sharing images from the host clipboard to containers, making it easy to paste screenshots and images directly into agents running inside containers.
 
 ### How It Works
@@ -108,6 +112,8 @@ If you don't want clipboard monitoring, use the `--no-clipboard` flag:
 ```bash
 agentsandbox --no-clipboard
 ```
+
+While the integration is disabled this flag is redundant but left in place for future compatibility.
 
 ### Requirements
 
