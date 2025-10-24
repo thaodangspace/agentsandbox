@@ -7,6 +7,7 @@ use std::process::{Command, ExitStatus};
 use tempfile::NamedTempFile;
 
 use crate::cli::Agent;
+use crate::clipboard::ensure_clipboard_dir;
 use crate::config::{get_claude_config_dir, get_claude_json_paths};
 use crate::language::{
     detect_project_languages, ensure_language_tools, sync_node_modules_from_host, ProjectLanguage,
@@ -263,7 +264,14 @@ fn build_docker_image(current_user: &str, force_rebuild: bool) -> Result<HashMap
     build_command.arg("-t");
     build_command.arg("agentsandbox-image");
     if force_rebuild {
-        build_command.arg("--no-cache");
+        // Use build arg to invalidate only agent layers, keeping base layers cached
+        let cache_bust = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .to_string();
+        build_command.arg("--build-arg");
+        build_command.arg(format!("AGENT_CACHE_BUST={}", cache_bust));
     }
     build_command.arg("-f");
     build_command.arg(dockerfile_path.to_str().unwrap());
@@ -410,6 +418,20 @@ fn build_run_command(
             languages.iter().map(|l| l.name()).collect::<Vec<_>>()
         );
         mount_language_configs(&mut docker_run, languages, current_user);
+    }
+
+    // Mount clipboard directory (read-only)
+    if let Ok(clipboard_dir) = ensure_clipboard_dir() {
+        docker_run.args([
+            "-v",
+            &format!("{}:/workspace/.clipboard:ro", clipboard_dir.display()),
+        ]);
+        println!(
+            "Mounting clipboard directory: {} -> /workspace/.clipboard",
+            clipboard_dir.display()
+        );
+    } else {
+        println!("Warning: Failed to setup clipboard directory, clipboard sharing will not be available");
     }
 
     docker_run.args(["agentsandbox-image", "/bin/bash"]);
@@ -851,6 +873,12 @@ RUN set -eux; \
     echo "{user} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 ENV HOME=/home/{user}
 USER root
+
+# Cache-busting arg: change this to invalidate only agent installation layers
+# All layers above remain cached (Ubuntu, Node, Go, Rust, user setup)
+ARG AGENT_CACHE_BUST=default
+RUN echo "Agent cache bust: ${{AGENT_CACHE_BUST}}"
+
 # Install Claude Code
 RUN npm install -g @anthropic-ai/claude-code
 RUN npm install -g @google/gemini-cli
@@ -881,6 +909,36 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 # Add Go, Rust, Cargo, and uv to PATH
 RUN echo 'export PATH="/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"' >> ~/.bashrc && \
     echo 'source ~/.cargo/env' >> ~/.bashrc
+
+# Install clipboard helper utility
+USER root
+RUN cat > /usr/local/bin/clipboard << 'CLIPBOARD_EOF'
+#!/bin/bash
+CLIPBOARD_DIR="/workspace/.clipboard"
+get_latest() {{
+    if [ ! -d "$CLIPBOARD_DIR" ]; then
+        echo "Error: Clipboard directory not found" >&2
+        return 1
+    fi
+    if [ -L "$CLIPBOARD_DIR/latest" ]; then
+        echo "$CLIPBOARD_DIR/latest"
+        return 0
+    fi
+    local latest=$(find "$CLIPBOARD_DIR" -maxdepth 1 -type f \( -name "clipboard-*.png" -o -name "clipboard-*.jpg" -o -name "clipboard-*.jpeg" \) -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n 1 | cut -d' ' -f2-)
+    if [ -z "$latest" ]; then
+        echo "No clipboard images found" >&2
+        return 1
+    fi
+    echo "$latest"
+}}
+case "${{1:-latest}}" in
+    latest) get_latest ;;
+    list) find "$CLIPBOARD_DIR" -maxdepth 1 -type f \( -name "clipboard-*.png" -o -name "clipboard-*.jpg" \) 2>/dev/null | sort -r ;;
+    *) echo "Usage: clipboard [latest|list]" >&2; exit 1 ;;
+esac
+CLIPBOARD_EOF
+RUN chmod +x /usr/local/bin/clipboard
+USER {user}
 
 # Set working directory to home
 WORKDIR /home/{user}

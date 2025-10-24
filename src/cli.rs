@@ -26,6 +26,9 @@ pub struct Cli {
     #[arg(long, help = "Attach to container shell without starting the agent")]
     pub shell: bool,
 
+    #[arg(long, help = "Disable clipboard image sharing between host and container")]
+    pub no_clipboard: bool,
+
     #[arg(
         long,
         value_enum,

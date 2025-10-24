@@ -47,8 +47,9 @@ cargo test
 
 The codebase is structured into focused modules:
 
--   **`main.rs`**: Entry point handling command-line parsing, Docker availability checks, and orchestrating container creation or resumption
--   **`cli.rs`**: Command-line interface definition using clap with support for resuming previous containers via `--continue` flag
+-   **`main.rs`**: Entry point handling command-line parsing, Docker availability checks, clipboard watcher management, and orchestrating container creation or resumption
+-   **`cli.rs`**: Command-line interface definition using clap with support for resuming previous containers via `--continue` flag and disabling clipboard with `--no-clipboard`
+-   **`clipboard.rs`**: Clipboard directory management, watcher PID tracking, and process monitoring for image sharing between host and containers
 -   **`config.rs`**: Claude configuration discovery and management, handling multiple config locations (.claude directory, XDG, local .claude.json files)
 -   **`container.rs`**: Core Docker operations including container creation, lifecycle management, and dynamic Dockerfile generation
 -   **`state.rs`**: Persistent state management for tracking the last created container in `~/.config/agentsandbox/last_container`
@@ -75,6 +76,55 @@ Containers are created with:
 -   User: Matches host user with sudo privileges
 -   Claude configs: Auto-mounted from `~/.claude`, XDG locations, or local `.claude.json`
 -   Development tools: Pre-installed and added to PATH via `.bashrc`
+
+## Clipboard Image Sharing
+
+agentsandbox supports sharing images from the host clipboard to containers, making it easy to paste screenshots and images directly into agents running inside containers.
+
+### How It Works
+
+1. **Automatic Clipboard Watcher**: When you start agentsandbox, a background process monitors your X11 clipboard for images
+2. **Image Detection**: When you copy an image (PNG, JPG, JPEG) to your clipboard, it's automatically saved to `~/.config/agentsandbox/clipboard/`
+3. **Container Access**: The clipboard directory is mounted read-only into containers at `/workspace/.clipboard/`
+4. **Helper Command**: Inside containers, use the `clipboard` command to get the path to the latest image
+
+### Usage Examples
+
+```bash
+# Inside the container, get the latest clipboard image path
+clipboard
+
+# Use with Claude Code
+claude code $(clipboard)
+
+# List all clipboard images
+clipboard list
+```
+
+### Disabling Clipboard Sharing
+
+If you don't want clipboard monitoring, use the `--no-clipboard` flag:
+
+```bash
+agentsandbox --no-clipboard
+```
+
+### Requirements
+
+- **X11 Display Server**: Currently supports X11 (most common on Linux)
+- **xclip**: Required for clipboard monitoring (usually pre-installed)
+  ```bash
+  # Install if needed
+  sudo apt-get install xclip
+  ```
+
+### Technical Details
+
+- **Clipboard Directory**: `~/.config/agentsandbox/clipboard/`
+- **Image Format**: Saved as `clipboard-YYYYMMDD-HHMMSS.{ext}`
+- **Automatic Cleanup**: Keeps only the 10 most recent images to prevent disk bloat
+- **Container Mount**: Read-only at `/workspace/.clipboard/`
+- **Helper Script**: Available at `/usr/local/bin/clipboard` inside containers
 
 ## Container Management
 

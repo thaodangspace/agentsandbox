@@ -5,6 +5,7 @@
 )]
 
 pub mod cli;
+pub mod clipboard;
 pub mod config;
 pub mod container;
 pub mod language;
