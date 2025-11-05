@@ -15,7 +15,6 @@ web/node_modules/
 .dev
 .serena/.gitignore
 .serena/project.yml
-.agentsandbox/session_logs/agent-claude-agentsandbox-main-2510241218/session-20251024.log
-.agentsandbox/session_logs/agent-claude-agentsandbox-main-2510250029/session-20251025.log
-.agentsandbox/session_logs/agent-codex-agentsandbox-main-2510250047/session-20251025.log
-.agentsandbox/session_logs/agent-gemini-agentsandbox-main-2510250057/session-20251025.log
+.agentsandbox/**
+src/container/runtime.rs
+.serena/**

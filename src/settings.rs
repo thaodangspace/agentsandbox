@@ -12,6 +12,8 @@ pub struct Settings {
     pub skip_permission_flags: HashMap<String, String>,
     #[serde(default = "default_env_files")]
     pub env_files: Vec<String>,
+    #[serde(default = "default_log_retention_days")]
+    pub log_retention_days: u64,
 }
 
 impl Default for Settings {
@@ -30,8 +32,13 @@ impl Default for Settings {
             auto_remove_minutes: Some(60),
             skip_permission_flags: default_flags,
             env_files: default_env_files(),
+            log_retention_days: default_log_retention_days(),
         }
     }
+}
+
+fn default_log_retention_days() -> u64 {
+    30
 }
 
 fn default_env_files() -> Vec<String> {

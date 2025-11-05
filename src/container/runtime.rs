@@ -12,10 +12,11 @@ use crate::config::{get_claude_config_dir, get_claude_json_paths};
 use crate::language::{
     detect_project_languages, ensure_language_tools, sync_node_modules_from_host, ProjectLanguage,
 };
+use crate::log_parser;
 use crate::settings::load_settings;
 use crate::state::{
-    load_container_run_command, load_image_agent_versions, prepare_session_log,
-    save_container_run_command, save_image_agent_versions,
+    get_session_log_paths, load_container_run_command, load_image_agent_versions,
+    prepare_session_log, save_container_run_command, save_image_agent_versions,
 };
 
 use super::manage::{container_exists, is_container_running};
@@ -130,6 +131,54 @@ fn versions_match(a: &str, b: &str) -> bool {
     a.trim().eq_ignore_ascii_case(b.trim())
 }
 
+/// Compare versions to determine if host version is newer than image version.
+/// Returns true if host_version is newer than image_version.
+/// Uses semantic versioning comparison where possible, falls back to string comparison.
+fn is_host_version_newer(host_version: &str, image_version: &str) -> bool {
+    let host = host_version.trim();
+    let image = image_version.trim();
+
+    // Try to extract version numbers (looking for patterns like "1.2.3" or "v1.2.3")
+    let extract_version_parts = |s: &str| -> Option<Vec<u32>> {
+        // Find first sequence of digits and dots
+        let version_pattern = s
+            .chars()
+            .skip_while(|c| !c.is_ascii_digit())
+            .take_while(|c| c.is_ascii_digit() || *c == '.')
+            .collect::<String>();
+
+        if version_pattern.is_empty() {
+            return None;
+        }
+
+        version_pattern
+            .split('.')
+            .filter_map(|part| part.parse::<u32>().ok())
+            .collect::<Vec<_>>()
+            .into()
+    };
+
+    match (extract_version_parts(host), extract_version_parts(image)) {
+        (Some(host_parts), Some(image_parts)) => {
+            // Compare version parts lexicographically
+            for (h, i) in host_parts.iter().zip(image_parts.iter()) {
+                if h > i {
+                    return true;
+                } else if h < i {
+                    return false;
+                }
+            }
+            // If all compared parts are equal, the one with more parts is newer
+            host_parts.len() > image_parts.len()
+        }
+        _ => {
+            // Fallback: if we can't parse versions, assume any difference means rebuild needed
+            // This is conservative - if we can't determine ordering, we rebuild
+            host != image
+        }
+    }
+}
+
 fn query_agent_version_in_image(agent: &Agent) -> Result<Option<String>> {
     let check_command = format!("{} --version", agent.command());
     let output = Command::new("docker")
@@ -204,28 +253,49 @@ fn evaluate_all_agent_versions() -> Result<Vec<Agent>> {
         let host_version = detect_host_agent_version(agent);
 
         let needs_rebuild = match (&host_version, image_version) {
-            (Some(host), Some(image)) if !versions_match(host, image) => {
-                println!(
-                    "Detected {} version mismatch between host ({}) and sandbox image ({}).",
-                    agent, host, image
-                );
-                true
+            (Some(host), Some(image)) => {
+                if versions_match(host, image) {
+                    // Versions match exactly, no rebuild needed
+                    false
+                } else if is_host_version_newer(host, image) {
+                    // Host version is newer than image, rebuild needed
+                    println!(
+                        "Host {} version ({}) is newer than sandbox image ({}). Rebuilding to update image.",
+                        agent, host, image
+                    );
+                    true
+                } else {
+                    // Image version is newer or equal, no rebuild needed
+                    println!(
+                        "Sandbox image {} version ({}) is up-to-date (host: {}).",
+                        agent, image, host
+                    );
+                    false
+                }
             }
             (Some(host), None) => {
                 println!(
-                    "No recorded {} version for sandbox image (host reports {}).",
+                    "No recorded {} version for sandbox image (host reports {}). Rebuilding to capture version.",
                     agent, host
                 );
                 true
             }
-            (None, None) => {
+            (None, Some(image)) => {
+                // Image has a version but host doesn't - no need to rebuild
                 println!(
-                    "Unable to determine {} version on host or sandbox image.",
+                    "{} not found on host, but sandbox image has version {}.",
+                    agent, image
+                );
+                false
+            }
+            (None, None) => {
+                // Can't determine versions on either side - skip rebuild
+                println!(
+                    "Unable to determine {} version on host or sandbox image. Skipping rebuild.",
                     agent
                 );
-                true
+                false
             }
-            _ => false,
         };
 
         if needs_rebuild {
@@ -483,19 +553,27 @@ pub async fn create_container(
     let image_version = image_versions.get(agent.command()).cloned();
 
     if let (Some(host), Some(image)) = (&host_version, &image_version) {
-        if !versions_match(host, image) {
+        if versions_match(host, image) {
+            if agents_to_rebuild.contains(agent) {
+                println!(
+                    "Sandbox image {} version is now {} (matches host).",
+                    agent, image
+                );
+            }
+        } else if is_host_version_newer(host, image) {
             println!(
                 "Warning: {} version mismatch persists (host: {}, sandbox image: {}).",
                 agent, host, image
             );
             println!(
-                "Please update {} on your host to {} (or reinstall the sandbox image) to keep environments aligned.",
-                agent, image
+                "The image rebuild did not update {} to the host version. You may need to rebuild manually.",
+                agent
             );
-        } else if agents_to_rebuild.contains(agent) {
+        } else {
+            // Image version is newer than host - this is fine
             println!(
-                "Sandbox image {} version is now {} (matches host).",
-                agent, image
+                "Sandbox image {} version ({}) is newer than host ({}).",
+                agent, image, host
             );
         }
     } else if host_version.is_some() && image_version.is_none() {
@@ -627,6 +705,20 @@ async fn attach_to_container(
     skip_permission_flag: Option<&str>,
     shell: bool,
 ) -> Result<()> {
+    // Run automatic log cleanup in background using configured retention period
+    let container_name_cleanup = container_name.to_string();
+    let current_dir_cleanup = current_dir.to_path_buf();
+    tokio::spawn(async move {
+        use crate::state::cleanup_old_logs;
+        let retention_days = load_settings()
+            .ok()
+            .map(|s| s.log_retention_days)
+            .unwrap_or(30);
+        if let Err(e) = cleanup_old_logs(&container_name_cleanup, &current_dir_cleanup, retention_days) {
+            eprintln!("Warning: Failed to cleanup old logs: {}", e);
+        }
+    });
+
     let allocate_tty = atty::is(atty::Stream::Stdout) && atty::is(atty::Stream::Stdin);
     if shell {
         println!("Attaching to container shell...");
@@ -726,14 +818,12 @@ async fn attach_to_container(
 
         match log_output {
             Ok(output) if output.status.success() => {
-                if let Err(err) = fs::write(&host_log_path, output.stdout) {
+                // Save raw log and convert to JSONL
+                if let Err(err) = process_session_log(&host_log_path, output.stdout) {
                     println!(
-                        "Warning: failed to write session log to {}: {}",
-                        host_log_path.display(),
+                        "Warning: failed to process session log: {}",
                         err
                     );
-                } else {
-                    println!("Session log saved to {}", host_log_path.display());
                 }
             }
             Ok(output) => {
@@ -772,6 +862,45 @@ async fn attach_to_container(
                 "You can manually attach with: docker exec -it {} /bin/bash",
                 container_name
             );
+        }
+    }
+
+    Ok(())
+}
+
+/// Process raw session log: save to raw/, convert to JSONL, and optionally generate HTML
+fn process_session_log(raw_log_path: &Path, log_contents: Vec<u8>) -> Result<()> {
+
+    // Get paths for raw, JSONL, and HTML
+    let (raw_path, jsonl_path, _html_path) = get_session_log_paths(raw_log_path);
+
+    // Ensure raw directory exists
+    if let Some(raw_dir) = raw_path.parent() {
+        fs::create_dir_all(raw_dir)
+            .with_context(|| format!("Failed to create raw log directory: {:?}", raw_dir))?;
+    }
+
+    // Write raw log to raw/ directory
+    fs::write(&raw_path, &log_contents)
+        .with_context(|| format!("Failed to write raw log to {:?}", raw_path))?;
+
+    // Parse raw log and convert to JSONL
+    match log_parser::parse_raw_log(&raw_path) {
+        Ok(events) => {
+            // Write JSONL
+            if let Err(e) = log_parser::write_jsonl(&events, &jsonl_path) {
+                println!("Warning: Failed to write JSONL log: {}", e);
+            } else {
+                println!("Session log saved to {}", jsonl_path.display());
+                println!("Raw log archived to {}", raw_path.display());
+            }
+
+            // Optionally generate HTML (can be done on-demand via CLI later)
+            // For now, we skip automatic HTML generation to save time
+        }
+        Err(e) => {
+            println!("Warning: Failed to parse session log: {}", e);
+            println!("Raw log saved to {}", raw_path.display());
         }
     }
 
@@ -908,11 +1037,6 @@ RUN wget https://go.dev/dl/go1.24.5.linux-amd64.tar.gz && \
     tar -C /usr/local -xzf go1.24.5.linux-amd64.tar.gz && \
     rm go1.24.5.linux-amd64.tar.gz
 
-# Install Rust and Cargo (root)
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
-    /root/.cargo/bin/rustup component add rustfmt clippy && \
-    echo 'source ~/.cargo/env' >> /root/.bashrc
-
 # Create user with host UID/GID to avoid permissions issues on mounted volumes
 RUN set -eux; \
     existing_grp_by_gid="$(getent group {gid} | cut -d: -f1 || true)"; \
@@ -946,7 +1070,7 @@ WORKDIR /home/{user}
 # Ensure rustup/cargo and other tools are on PATH (prefer user toolchains)
 ENV PATH="/usr/local/go/bin:/home/{user}/.cargo/bin:/home/{user}/.local/bin:$PATH"
 
-# Install Rust for the user and ensure cargo is available
+# Install Rust for the user (fallback when host toolchain isn't mounted)
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
     ~/.cargo/bin/rustup component add rustfmt clippy && \
     echo 'source ~/.cargo/env' >> ~/.bashrc

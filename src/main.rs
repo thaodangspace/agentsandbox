@@ -9,6 +9,8 @@ mod clipboard;
 mod config;
 mod container;
 mod language;
+mod log_parser;
+mod log_viewer;
 mod settings;
 mod state;
 mod worktree;
@@ -18,7 +20,7 @@ use std::env;
 use std::fs;
 use std::io::{self, Write};
 
-use cli::{Agent, Cli, Commands};
+use cli::{Agent, Cli, Commands, LogAction};
 use clipboard::{
     clear_watcher_pid, clipboard_feature_enabled, ensure_clipboard_dir, is_process_running,
     load_watcher_pid, save_watcher_pid,
@@ -29,7 +31,10 @@ use container::{
     resume_container,
 };
 use settings::load_settings;
-use state::{clear_last_container, load_last_container, save_last_container};
+use state::{
+    cleanup_old_logs, clear_last_container, list_containers_with_logs, list_session_logs,
+    load_last_container, save_last_container,
+};
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
 use worktree::create_worktree;
@@ -93,6 +98,133 @@ fn ensure_clipboard_watcher_running() -> Result<()> {
     Ok(())
 }
 
+/// Handle the logs subcommand
+fn handle_logs_command(action: &LogAction, current_dir: &std::path::Path) -> Result<()> {
+    match action {
+        LogAction::List { container } => {
+            let containers = if let Some(container_name) = container {
+                vec![container_name.clone()]
+            } else {
+                list_containers_with_logs(current_dir)?
+            };
+
+            if containers.is_empty() {
+                println!("No session logs found.");
+                return Ok(());
+            }
+
+            for container_name in containers {
+                println!("\nContainer: {}", container_name);
+                match list_session_logs(&container_name, current_dir) {
+                    Ok(logs) => {
+                        if logs.is_empty() {
+                            println!("  No logs found");
+                        } else {
+                            for log in logs {
+                                println!("  {}", log.display());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("  Error listing logs: {}", e);
+                    }
+                }
+            }
+        }
+        LogAction::View {
+            log_file,
+            output,
+            open,
+        } => {
+            // Read JSONL log
+            let events =
+                log_parser::parse_raw_log(log_file).context("Failed to parse log file")?;
+
+            // Determine output path
+            let html_path = output
+                .clone()
+                .unwrap_or_else(|| log_file.with_extension("html"));
+
+            // Generate HTML
+            let title = log_file
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Session Log");
+            log_viewer::write_html(&events, &html_path, title)
+                .context("Failed to generate HTML")?;
+
+            println!("HTML log generated: {}", html_path.display());
+
+            // Open in browser if requested
+            if *open {
+                #[cfg(target_os = "linux")]
+                {
+                    std::process::Command::new("xdg-open")
+                        .arg(&html_path)
+                        .spawn()
+                        .context("Failed to open browser")?;
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    std::process::Command::new("open")
+                        .arg(&html_path)
+                        .spawn()
+                        .context("Failed to open browser")?;
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    std::process::Command::new("cmd")
+                        .args(["/c", "start", html_path.to_str().unwrap()])
+                        .spawn()
+                        .context("Failed to open browser")?;
+                }
+                println!("Opened in browser");
+            }
+        }
+        LogAction::Clean { days, container } => {
+            let containers = if let Some(container_name) = container {
+                vec![container_name.clone()]
+            } else {
+                list_containers_with_logs(current_dir)?
+            };
+
+            if containers.is_empty() {
+                println!("No containers with logs found.");
+                return Ok(());
+            }
+
+            let mut total_deleted = 0;
+            for container_name in containers {
+                match cleanup_old_logs(&container_name, current_dir, *days) {
+                    Ok(deleted) => {
+                        if deleted > 0 {
+                            println!(
+                                "Deleted {} old log files from container {}",
+                                deleted, container_name
+                            );
+                            total_deleted += deleted;
+                        }
+                    }
+                    Err(e) => {
+                        println!(
+                            "Warning: Failed to cleanup logs for {}: {}",
+                            container_name, e
+                        );
+                    }
+                }
+            }
+
+            if total_deleted == 0 {
+                println!("No logs older than {} days found.", days);
+            } else {
+                println!("Total deleted: {} files", total_deleted);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse_args();
@@ -131,6 +263,10 @@ async fn main() -> Result<()> {
             current_dir.display()
         );
         return Ok(());
+    }
+
+    if let Some(Commands::Logs { action }) = cli.command.as_ref() {
+        return handle_logs_command(action, &current_dir);
     }
 
     if cli.continue_ {

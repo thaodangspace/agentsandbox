@@ -123,6 +123,129 @@ pub fn prepare_session_log(container_name: &str, project_dir: &Path) -> Result<(
     Ok((host_path, container_path))
 }
 
+/// Get paths for session log files (raw, JSONL, HTML)
+pub fn get_session_log_paths(raw_log_path: &Path) -> (PathBuf, PathBuf, PathBuf) {
+    let jsonl_path = raw_log_path.with_extension("jsonl");
+    let html_path = raw_log_path.with_extension("html");
+    let raw_dir = raw_log_path.parent().unwrap().join("raw");
+    let raw_filename = raw_log_path.file_name().unwrap();
+    let raw_path = raw_dir.join(raw_filename);
+
+    (raw_path, jsonl_path, html_path)
+}
+
+/// List all session logs for a container (returns JSONL paths)
+pub fn list_session_logs(container_name: &str, project_dir: &Path) -> Result<Vec<PathBuf>> {
+    let logs_dir = ensure_session_logs_dir(container_name, project_dir)?;
+    let mut logs = Vec::new();
+
+    if logs_dir.exists() {
+        for entry in fs::read_dir(&logs_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+                logs.push(path);
+            }
+        }
+    }
+
+    logs.sort_by(|a, b| b.cmp(a)); // Most recent first
+    Ok(logs)
+}
+
+/// Clean up old session logs based on retention days
+pub fn cleanup_old_logs(container_name: &str, project_dir: &Path, retention_days: u64) -> Result<usize> {
+    let logs_dir = ensure_session_logs_dir(container_name, project_dir)?;
+    let cutoff = Utc::now() - chrono::Duration::days(retention_days as i64);
+    let mut deleted_count = 0;
+
+    if !logs_dir.exists() {
+        return Ok(0);
+    }
+
+    for entry in fs::read_dir(&logs_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        // Skip directories (like 'raw')
+        if path.is_dir() {
+            continue;
+        }
+
+        // Check file modification time
+        if let Ok(metadata) = path.metadata() {
+            if let Ok(modified) = metadata.modified() {
+                let modified_time: chrono::DateTime<Utc> = modified.into();
+                if modified_time < cutoff {
+                    // Delete the file and its related files
+                    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                    match ext {
+                        "jsonl" | "html" => {
+                            if fs::remove_file(&path).is_ok() {
+                                deleted_count += 1;
+                            }
+                        }
+                        "log" => {
+                            // Only delete raw logs from the 'raw' subdirectory
+                            if path.parent().and_then(|p| p.file_name()) == Some("raw".as_ref()) {
+                                if fs::remove_file(&path).is_ok() {
+                                    deleted_count += 1;
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    // Also clean up the raw directory
+    let raw_dir = logs_dir.join("raw");
+    if raw_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&raw_dir) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let path = entry.path();
+                    if let Ok(metadata) = path.metadata() {
+                        if let Ok(modified) = metadata.modified() {
+                            let modified_time: chrono::DateTime<Utc> = modified.into();
+                            if modified_time < cutoff {
+                                if fs::remove_file(&path).is_ok() {
+                                    deleted_count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(deleted_count)
+}
+
+/// Get all containers with session logs
+pub fn list_containers_with_logs(project_dir: &Path) -> Result<Vec<String>> {
+    let logs_base = project_dir.join(".agentsandbox").join("session_logs");
+    let mut containers = Vec::new();
+
+    if logs_base.exists() {
+        for entry in fs::read_dir(&logs_base)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    containers.push(name.to_string());
+                }
+            }
+        }
+    }
+
+    containers.sort();
+    Ok(containers)
+}
+
 pub fn load_image_agent_versions() -> Result<HashMap<String, String>> {
     let path = get_image_versions_path()?;
     if !path.exists() {

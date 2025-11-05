@@ -52,6 +52,36 @@ pub enum Commands {
     Ps,
     #[command(about = "Remove all containers created from this directory")]
     Cleanup,
+    #[command(about = "Manage session logs")]
+    Logs {
+        #[command(subcommand)]
+        action: LogAction,
+    },
+}
+
+#[derive(Subcommand, Clone)]
+pub enum LogAction {
+    #[command(about = "List all session logs")]
+    List {
+        #[arg(long, help = "Filter by container name")]
+        container: Option<String>,
+    },
+    #[command(about = "View a session log as HTML")]
+    View {
+        #[arg(help = "Path to the JSONL log file")]
+        log_file: PathBuf,
+        #[arg(long, help = "Output HTML file path (default: same as log with .html extension)")]
+        output: Option<PathBuf>,
+        #[arg(long, help = "Open in browser after generating")]
+        open: bool,
+    },
+    #[command(about = "Clean up old session logs")]
+    Clean {
+        #[arg(long, default_value = "30", help = "Keep logs newer than this many days")]
+        days: u64,
+        #[arg(long, help = "Filter by container name")]
+        container: Option<String>,
+    },
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq)]
