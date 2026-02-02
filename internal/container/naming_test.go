@@ -32,20 +32,20 @@ func TestSanitize(t *testing.T) {
 func TestGenerateContainerName(t *testing.T) {
 	name := GenerateContainerName("/home/user/myproject", config.AgentClaude)
 
-	// Check it starts with agent-claude
-	if !strings.HasPrefix(name, "agent-claude-") {
-		t.Errorf("GenerateContainerName() = %v, should start with 'agent-claude-'", name)
+	// Check it has the expected format: agentsandbox-{project_dir}
+	expected := "agentsandbox-myproject"
+	if name != expected {
+		t.Errorf("GenerateContainerName() = %v, want %v", name, expected)
+	}
+
+	// Check it starts with agentsandbox-
+	if !strings.HasPrefix(name, "agentsandbox-") {
+		t.Errorf("GenerateContainerName() = %v, should start with 'agentsandbox-'", name)
 	}
 
 	// Check it contains the project name
 	if !strings.Contains(name, "myproject") {
 		t.Errorf("GenerateContainerName() = %v, should contain 'myproject'", name)
-	}
-
-	// Check it has a timestamp at the end
-	parts := strings.Split(name, "-")
-	if len(parts) < 4 {
-		t.Errorf("GenerateContainerName() = %v, should have at least 4 parts", name)
 	}
 }
 
@@ -55,8 +55,8 @@ func TestExtractProjectName(t *testing.T) {
 		containerName string
 		want          string
 	}{
-		{"valid", "agent-claude-myproject-main-1234567890", "myproject"},
-		{"multi part", "agent-gemini-my-project-feature-1234567890", "my-project"},
+		{"valid", "agentsandbox-myproject", "myproject"},
+		{"multi part", "agentsandbox-my-project", "my-project"},
 		{"invalid format", "invalid-name", "unknown"},
 	}
 
@@ -68,4 +68,3 @@ func TestExtractProjectName(t *testing.T) {
 		})
 	}
 }
-

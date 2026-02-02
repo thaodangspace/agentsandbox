@@ -134,4 +134,4 @@ While the integration is disabled this flag is redundant but left in place for f
 
 ## Container Management
 
-The tool generates contextual container names using the format `agent-{agent}-{dir}-{branch}-{yymmddhhmm}` and tracks the last container for resumption. State is persisted in `~/.config/agentsandbox/last_container`.
+The tool generates container names using the format `agentsandbox-{project_dir}` and tracks the last container for resumption. State is persisted in `~/.config/agentsandbox/last_container`.

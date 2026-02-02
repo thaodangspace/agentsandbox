@@ -90,11 +90,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Auto-remove old containers
-	if err := container.AutoRemoveOldContainers(settings.AutoRemoveMinutes); err != nil {
-		fmt.Printf("Warning: failed to auto-remove old containers: %v\n", err)
-	}
-
 	// Get skip permission flag
 	skipPermissionFlag := settings.SkipPermissionFlags[agentName]
 

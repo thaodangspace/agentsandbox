@@ -10,7 +10,6 @@ import (
 
 // Settings represents the application settings
 type Settings struct {
-	AutoRemoveMinutes    int               `json:"auto_remove_minutes" mapstructure:"auto_remove_minutes"`
 	SkipPermissionFlags  map[string]string `json:"skip_permission_flags" mapstructure:"skip_permission_flags"`
 	EnvFiles             []string          `json:"env_files" mapstructure:"env_files"`
 }
@@ -18,7 +17,6 @@ type Settings struct {
 // DefaultSettings returns the default settings
 func DefaultSettings() *Settings {
 	return &Settings{
-		AutoRemoveMinutes: 60,
 		SkipPermissionFlags: map[string]string{
 			"claude": "--dangerously-skip-permissions",
 			"gemini": "--yolo",
@@ -139,7 +137,6 @@ func SetupViper() error {
 
 	// Set defaults
 	defaults := DefaultSettings()
-	viper.SetDefault("auto_remove_minutes", defaults.AutoRemoveMinutes)
 	viper.SetDefault("skip_permission_flags", defaults.SkipPermissionFlags)
 	viper.SetDefault("env_files", defaults.EnvFiles)
 

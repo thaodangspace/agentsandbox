@@ -118,7 +118,7 @@ agentsandbox --shell
 docker exec -it <container-name> /bin/bash
 ```
 
-The container name appears in the startup log (format: `agent-{agent}-{dir}-{branch}-{timestamp}`).
+The container name appears in the startup log (format: `agentsandbox-{project_dir}`).
 
 ## Container Layout
 

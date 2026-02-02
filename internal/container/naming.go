@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/thaodangspace/agentsandbox/internal/config"
 )
@@ -54,22 +53,13 @@ func GenerateContainerName(dir string, agent config.Agent) string {
 	dirName := filepath.Base(dir)
 	dirName = Sanitize(dirName)
 
-	// Get branch name
-	branchName := GetCurrentBranch(dir)
-
-	// Get agent name
-	agentName := Sanitize(agent.Command())
-
-	// Generate timestamp
-	timestamp := time.Now().Unix()
-
-	// Format: agent-{agent}-{dir}-{branch}-{timestamp}
-	return fmt.Sprintf("agent-%s-%s-%s-%d", agentName, dirName, branchName, timestamp)
+	// Format: agentsandbox-{project_dir}
+	return fmt.Sprintf("agentsandbox-%s", dirName)
 }
 
 // ParseContainerName parses a container name and extracts the agent
 func ParseContainerName(name string) (config.Agent, error) {
-	if !strings.HasPrefix(name, "agent-") {
+	if !strings.HasPrefix(name, "agentsandbox-") {
 		return "", fmt.Errorf("invalid container name format")
 	}
 
@@ -81,4 +71,3 @@ func ParseContainerName(name string) (config.Agent, error) {
 
 	return agent, nil
 }
-

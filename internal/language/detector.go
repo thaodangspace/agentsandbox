@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strings"
 )
 
 // Language represents a programming language detected in the project
@@ -89,7 +91,7 @@ func (l Language) InstallCmd() string {
 	case LanguagePython:
 		return "sudo apt-get update && sudo apt-get install -y python3 python3-pip"
 	case LanguageGo:
-		return "wget https://go.dev/dl/go1.24.5.linux-amd64.tar.gz && sudo tar -C /usr/local -xzf go1.24.5.linux-amd64.tar.gz && rm go1.24.5.linux-amd64.tar.gz"
+		return "ARCH=$(dpkg --print-architecture) && if [ \"$ARCH\" = \"arm64\" ]; then GO_ARCH=\"arm64\"; else GO_ARCH=\"amd64\"; fi && wget https://go.dev/dl/go1.24.5.linux-${GO_ARCH}.tar.gz && sudo tar -C /usr/local -xzf go1.24.5.linux-${GO_ARCH}.tar.gz && rm go1.24.5.linux-${GO_ARCH}.tar.gz"
 	case LanguagePHP:
 		return "sudo apt-get update && sudo apt-get install -y php-cli unzip && curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer"
 	case LanguageRuby:
@@ -97,6 +99,58 @@ func (l Language) InstallCmd() string {
 	default:
 		return ""
 	}
+}
+
+// DockerfileInstallCmd returns the Dockerfile RUN command to install the language toolchain
+func (l Language) DockerfileInstallCmd() string {
+	switch l {
+	case LanguageRust:
+		return `RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && /root/.cargo/bin/rustup component add rustfmt clippy`
+	case LanguageNodeJS:
+		return `RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs`
+	case LanguagePython:
+		return `RUN apt-get update && apt-get install -y python3 python3-pip python3-venv \
+    && rm -rf /var/lib/apt/lists/*`
+	case LanguageGo:
+		return `RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "arm64" ]; then GO_ARCH="arm64"; else GO_ARCH="amd64"; fi && \
+    wget -q https://go.dev/dl/go1.24.5.linux-${GO_ARCH}.tar.gz && \
+    tar -C /usr/local -xzf go1.24.5.linux-${GO_ARCH}.tar.gz && \
+    rm go1.24.5.linux-${GO_ARCH}.tar.gz`
+	case LanguagePHP:
+		return `RUN apt-get update && apt-get install -y php-cli unzip \
+    && curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer \
+    && rm -rf /var/lib/apt/lists/*`
+	case LanguageRuby:
+		return `RUN apt-get update && apt-get install -y ruby-full \
+    && gem install bundler \
+    && rm -rf /var/lib/apt/lists/*`
+	default:
+		return ""
+	}
+}
+
+// GenerateImageTag creates a deterministic cache tag from a list of languages
+func GenerateImageTag(languages []Language) string {
+	if len(languages) == 0 {
+		return "base"
+	}
+
+	// Sort languages to ensure consistent ordering
+	sorted := make([]Language, len(languages))
+	copy(sorted, languages)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i] < sorted[j]
+	})
+
+	// Build tag from language names
+	names := make([]string, len(sorted))
+	for i, l := range sorted {
+		names[i] = string(l)
+	}
+	return strings.Join(names, "-")
 }
 
 // DetectProjectLanguages detects which programming languages are used in a project

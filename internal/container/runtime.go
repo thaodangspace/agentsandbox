@@ -8,10 +8,11 @@ import (
 	"strings"
 
 	"github.com/thaodangspace/agentsandbox/internal/config"
+	"github.com/thaodangspace/agentsandbox/internal/language"
 	"github.com/thaodangspace/agentsandbox/internal/state"
 )
 
-const dockerfileTemplate = `FROM ubuntu:22.04
+const dockerfileBaseTemplate = `FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -21,13 +22,12 @@ RUN apt-get update && apt-get install -y \
     wget \
     git \
     build-essential \
-    python3 \
-    python3-pip \
-    nodejs \
-    npm \
     sudo \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Language toolchains (inserted dynamically)
+%s
 
 # Create user
 ARG USERNAME=ubuntu
@@ -51,19 +51,36 @@ ARG CURSOR_CACHE_BUST
 USER $USERNAME
 WORKDIR /home/$USERNAME
 
+# Add Go to PATH if installed
+ENV PATH="/usr/local/go/bin:${PATH}"
+
 # Install Claude (example - adjust per actual installation method)
 RUN curl -fsSL https://claude.ai/install.sh | bash || true
 
-WORKDIR /workspace
 CMD ["/bin/bash"]
 `
 
-// CreateDockerfile creates a Dockerfile with the specified user info
-func CreateDockerfile(username string, uid, gid int) (string, error) {
+// CreateDockerfile creates a Dockerfile with the specified user info and language toolchains
+func CreateDockerfile(username string, uid, gid int, languages []language.Language) (string, error) {
 	tempDir := os.TempDir()
 	dockerfilePath := filepath.Join(tempDir, "Dockerfile.agentsandbox")
 
-	content := strings.Replace(dockerfileTemplate, "ARG USERNAME=ubuntu", fmt.Sprintf("ARG USERNAME=%s", username), 1)
+	// Generate language install commands
+	var languageInstalls []string
+	for _, lang := range languages {
+		cmd := lang.DockerfileInstallCmd()
+		if cmd != "" {
+			languageInstalls = append(languageInstalls, cmd)
+		}
+	}
+	languageSection := strings.Join(languageInstalls, "\n\n")
+	if languageSection == "" {
+		languageSection = "# No language toolchains detected"
+	}
+
+	// Generate Dockerfile content
+	content := fmt.Sprintf(dockerfileBaseTemplate, languageSection)
+	content = strings.Replace(content, "ARG USERNAME=ubuntu", fmt.Sprintf("ARG USERNAME=%s", username), 1)
 	content = strings.Replace(content, "ARG USER_UID=1000", fmt.Sprintf("ARG USER_UID=%d", uid), 1)
 	content = strings.Replace(content, "ARG USER_GID=1000", fmt.Sprintf("ARG USER_GID=%d", gid), 1)
 
@@ -74,35 +91,55 @@ func CreateDockerfile(username string, uid, gid int) (string, error) {
 	return dockerfilePath, nil
 }
 
-// BuildDockerImage builds the agentsandbox Docker image
-func BuildDockerImage(username string) error {
+// BuildDockerImage builds the agentsandbox Docker image with detected language toolchains
+// Returns the image name (including tag) for use in container creation
+func BuildDockerImage(username string, languages []language.Language) (string, error) {
+	// Generate image tag based on detected languages
+	tag := language.GenerateImageTag(languages)
+	imageName := fmt.Sprintf("agentsandbox-image:%s", tag)
+
+	// Check if image already exists (cache hit)
+	checkCmd := exec.Command("docker", "image", "inspect", imageName)
+	if err := checkCmd.Run(); err == nil {
+		fmt.Printf("Using cached image: %s\n", imageName)
+		return imageName, nil
+	}
+
 	// Get host UID/GID
 	uidCmd := exec.Command("id", "-u")
 	uidOutput, err := uidCmd.Output()
 	if err != nil {
-		return fmt.Errorf("failed to get host UID: %w", err)
+		return "", fmt.Errorf("failed to get host UID: %w", err)
 	}
 
 	gidCmd := exec.Command("id", "-g")
 	gidOutput, err := gidCmd.Output()
 	if err != nil {
-		return fmt.Errorf("failed to get host GID: %w", err)
+		return "", fmt.Errorf("failed to get host GID: %w", err)
 	}
 
 	uid := strings.TrimSpace(string(uidOutput))
 	gid := strings.TrimSpace(string(gidOutput))
 
-	// Create Dockerfile
+	// Create Dockerfile with language toolchains
 	dockerfilePath, err := CreateDockerfile(username,
-		parseInt(uid), parseInt(gid))
+		parseInt(uid), parseInt(gid), languages)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer os.Remove(dockerfilePath)
 
-	fmt.Println("Building Docker image...")
+	fmt.Printf("Building Docker image: %s\n", imageName)
+	if len(languages) > 0 {
+		names := make([]string, len(languages))
+		for i, l := range languages {
+			names[i] = l.Name()
+		}
+		fmt.Printf("Including toolchains: %s\n", strings.Join(names, ", "))
+	}
+
 	cmd := exec.Command("docker", "build",
-		"-t", "agentsandbox-image",
+		"-t", imageName,
 		"--build-arg", fmt.Sprintf("USERNAME=%s", username),
 		"--build-arg", fmt.Sprintf("USER_UID=%s", uid),
 		"--build-arg", fmt.Sprintf("USER_GID=%s", gid),
@@ -114,11 +151,11 @@ func BuildDockerImage(username string) error {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Docker build failed: %w", err)
+		return "", fmt.Errorf("Docker build failed: %w", err)
 	}
 
 	fmt.Println("Docker image built successfully")
-	return nil
+	return imageName, nil
 }
 
 // CreateContainer creates and starts a new container
@@ -136,8 +173,19 @@ func CreateContainer(
 		username = "ubuntu"
 	}
 
-	// Build the image
-	if err := BuildDockerImage(username); err != nil {
+	// Detect project languages
+	languages := language.DetectProjectLanguages(currentDir)
+	if len(languages) > 0 {
+		names := make([]string, len(languages))
+		for i, l := range languages {
+			names[i] = l.Name()
+		}
+		fmt.Printf("Detected languages: %s\n", strings.Join(names, ", "))
+	}
+
+	// Build the image (cached if same languages detected before)
+	imageName, err := BuildDockerImage(username, languages)
+	if err != nil {
 		return err
 	}
 
@@ -145,13 +193,13 @@ func CreateContainer(
 	args := []string{
 		"run", "-d", "-it",
 		"--name", containerName,
-		"-v", fmt.Sprintf("%s:/workspace", currentDir),
+		"-v", fmt.Sprintf("%s:%s", currentDir, currentDir),
 	}
 
 	// Handle node_modules isolation for Node.js projects
 	packageJSON := filepath.Join(currentDir, "package.json")
 	if _, err := os.Stat(packageJSON); err == nil {
-		args = append(args, "-v", "/workspace/node_modules")
+		args = append(args, "-v", fmt.Sprintf("%s/node_modules", currentDir))
 		fmt.Println("Isolating node_modules with container volume")
 	}
 
@@ -164,7 +212,7 @@ func CreateContainer(
 			tempFile, err := os.CreateTemp("", "env-overlay-*")
 			if err == nil {
 				tempFile.Close()
-				containerEnvPath := filepath.Join("/workspace", envFile)
+				containerEnvPath := filepath.Join(currentDir, envFile)
 				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", tempFile.Name(), containerEnvPath))
 				fmt.Printf("Excluding %s from container mount\n", envFile)
 			}
@@ -177,13 +225,9 @@ func CreateContainer(
 		fmt.Printf("Mounting additional directory read-only: %s\n", additionalDir)
 	}
 
-	// Mount agent configs
-	if err := mountAgentConfigs(&args, agent, currentDir, username); err != nil {
-		fmt.Printf("Warning: failed to mount agent configs: %v\n", err)
-	}
 
 	// Final args
-	args = append(args, "agentsandbox-image", "/bin/bash")
+	args = append(args, imageName, "/bin/bash")
 
 	// Run container
 	cmd := exec.Command("docker", args...)
@@ -246,13 +290,6 @@ func ResumeContainer(
 		fmt.Println("Container is already running")
 	}
 
-	// Copy agent configs from host to container automatically
-	fmt.Println("\nCopying agent configurations from host to container...")
-	if err := CopyAgentConfigsToContainer(containerName, agent); err != nil {
-		fmt.Printf("Warning: failed to copy agent configs: %v\n", err)
-		// Don't fail - this is not critical, configs might already be mounted
-	}
-
 	if attach {
 		currentDir, _ := os.Getwd()
 		return AttachToContainer(containerName, currentDir, agent, agentContinue, skipPermissionFlag, shellMode)
@@ -263,9 +300,9 @@ func ResumeContainer(
 
 // BuildAgentCommand builds the command to run the agent in the container
 func BuildAgentCommand(currentDir string, agent config.Agent, agentContinue bool, skipPermissionFlag string) string {
-	// Always use /workspace in the container
-	cmd := fmt.Sprintf("cd /workspace && export PATH=\"$HOME/.cargo/bin:$HOME/.local/bin:$PATH\" && %s",
-		agent.Command())
+	// Use host path in the container
+	cmd := fmt.Sprintf("cd %s && export PATH=\"$HOME/.cargo/bin:$HOME/.local/bin:$PATH\" && %s",
+		currentDir, agent.Command())
 
 	if agentContinue {
 		cmd += " --continue"
@@ -311,51 +348,6 @@ func AttachToContainer(
 	return cmd.Run()
 }
 
-// mountAgentConfigs mounts agent configuration directories
-func mountAgentConfigs(args *[]string, agent config.Agent, currentDir, username string) error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-
-	// Claude config
-	claudeConfig := config.GetClaudeConfigDir()
-	if claudeConfig != "" {
-		*args = append(*args, "-v", fmt.Sprintf("%s:/home/%s/.claude", claudeConfig, username))
-		fmt.Printf("Mounting Claude config from: %s\n", claudeConfig)
-	}
-
-	// Other agent configs
-	agentNames := []string{strings.ToLower(agent.Command())}
-	for _, agentName := range agentNames {
-		// Check project-level config first
-		projectConfigPath := filepath.Join(currentDir, "."+agentName)
-		if _, err := os.Stat(projectConfigPath); err == nil {
-			// Mount project config to /workspace/.{agentName}
-			containerPath := fmt.Sprintf("/workspace/.%s", agentName)
-			*args = append(*args, "-v", fmt.Sprintf("%s:%s", projectConfigPath, containerPath))
-			fmt.Printf("Mounting %s config from: %s -> %s\n", agentName, projectConfigPath, containerPath)
-			continue
-		}
-
-		// Check user-level configs as fallback
-		paths := []string{
-			filepath.Join(homeDir, "."+agentName),
-			filepath.Join(homeDir, ".config", agentName),
-		}
-
-		for _, path := range paths {
-			if _, err := os.Stat(path); err == nil {
-				containerPath := fmt.Sprintf("/home/%s/.%s", username, agentName)
-				*args = append(*args, "-v", fmt.Sprintf("%s:%s", path, containerPath))
-				fmt.Printf("Mounting %s config from: %s -> %s\n", agentName, path, containerPath)
-				break
-			}
-		}
-	}
-
-	return nil
-}
 
 // CopyAgentConfigsToContainer copies agent configuration files from host to container
 // This is useful after installing an agent from within the container shell
@@ -372,24 +364,29 @@ func CopyAgentConfigsToContainer(containerName string, agent config.Agent) error
 
 	fmt.Println("\nCopying agent configurations from host to container...")
 
-	// Claude config
-	claudeConfig := config.GetClaudeConfigDir()
-	if claudeConfig != "" {
-		if err := copyConfigToContainer(containerName, claudeConfig, fmt.Sprintf("/home/%s/.claude", username), username); err != nil {
-			fmt.Printf("Warning: failed to copy Claude config directory: %v\n", err)
+	// Determine which configs to copy based on the agent
+	var agentNames []string
+	if agent == config.AgentClaude {
+		// Special handling for Claude
+		claudeConfig := config.GetClaudeConfigDir()
+		if claudeConfig != "" {
+			if err := copyConfigToContainer(containerName, claudeConfig, fmt.Sprintf("/home/%s/.claude", username), username); err != nil {
+				fmt.Printf("Warning: failed to copy Claude config directory: %v\n", err)
+			}
 		}
+		// Check for .claude.json in home directory
+		claudeJSON := filepath.Join(homeDir, ".claude.json")
+		if _, err := os.Stat(claudeJSON); err == nil {
+			if err := copyConfigToContainer(containerName, claudeJSON, fmt.Sprintf("/home/%s/.claude.json", username), username); err != nil {
+				fmt.Printf("Warning: failed to copy .claude.json: %v\n", err)
+			}
+		}
+		agentNames = []string{"claude"}
+	} else {
+		// Generic agents
+		agentNames = []string{string(agent)}
 	}
 
-	// Check for .claude.json in home directory
-	claudeJSON := filepath.Join(homeDir, ".claude.json")
-	if _, err := os.Stat(claudeJSON); err == nil {
-		if err := copyConfigToContainer(containerName, claudeJSON, fmt.Sprintf("/home/%s/.claude.json", username), username); err != nil {
-			fmt.Printf("Warning: failed to copy .claude.json: %v\n", err)
-		}
-	}
-
-	// Generic agent configs
-	agentNames := []string{strings.ToLower(agent.Command()), "gemini", "cursor", "qwen", "codex"}
 	for _, agentName := range agentNames {
 		// Copy config directory
 		configDir := filepath.Join(homeDir, "."+agentName)
@@ -416,7 +413,7 @@ func CopyAgentConfigsToContainer(containerName string, agent config.Agent) error
 			// Create .config directory first
 			mkdirCmd := exec.Command("docker", "exec", containerName, "mkdir", "-p", fmt.Sprintf("/home/%s/.config", username))
 			_ = mkdirCmd.Run()
-			
+
 			if err := copyConfigToContainer(containerName, configPath, containerPath, username); err != nil {
 				fmt.Printf("Warning: failed to copy %s config from .config: %v\n", agentName, err)
 			}
@@ -443,6 +440,19 @@ func copyConfigToContainer(containerName, hostPath, containerPath, username stri
 		return fmt.Errorf("failed to get host GID: %w", err)
 	}
 	gid := strings.TrimSpace(string(gidOutput))
+
+	// Check if source is a directory
+	hostInfo, err := os.Stat(hostPath)
+	if err != nil {
+		return fmt.Errorf("failed to stat host path: %w", err)
+	}
+
+	// If source is a directory, remove existing destination in container first
+	// This prevents docker cp from creating nested directories (e.g., .claude/.claude/)
+	if hostInfo.IsDir() {
+		rmCmd := exec.Command("docker", "exec", containerName, "sudo", "rm", "-rf", containerPath)
+		_ = rmCmd.Run() // Ignore error if directory doesn't exist
+	}
 
 	// Copy the file/directory
 	cmd := exec.Command("docker", "cp", hostPath, fmt.Sprintf("%s:%s", containerName, containerPath))

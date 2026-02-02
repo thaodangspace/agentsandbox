@@ -32,10 +32,9 @@ func TestFromContainerName(t *testing.T) {
 		wantAgent     Agent
 		wantOk        bool
 	}{
-		{"valid claude", "agent-claude-myproject-main-1234567890", AgentClaude, true},
-		{"valid gemini", "agent-gemini-myproject-main-1234567890", AgentGemini, true},
-		{"invalid prefix", "container-claude-myproject", "", false},
-		{"no agent", "agent-myproject-main", "", false},
+		{"valid agentsandbox", "agentsandbox-myproject", "", false},
+		{"invalid prefix", "container-myproject", "", false},
+		{"old format", "agent-claude-myproject-main-1234567890", "", false},
 	}
 
 	for _, tt := range tests {
@@ -77,4 +76,3 @@ func TestValidateAgent(t *testing.T) {
 		})
 	}
 }
-

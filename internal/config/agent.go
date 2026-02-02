@@ -76,21 +76,15 @@ func (a Agent) String() string {
 }
 
 // FromContainerName extracts the agent type from a container name
+// Note: With the simplified naming format (agentsandbox-{project_dir}),
+// agent information is no longer embedded in the container name
 func FromContainerName(name string) (Agent, bool) {
-	if !strings.HasPrefix(name, "agent-") {
+	if !strings.HasPrefix(name, "agentsandbox-") {
 		return "", false
 	}
 
-	rest := strings.TrimPrefix(name, "agent-")
-	agents := []Agent{AgentClaude, AgentGemini, AgentCodex, AgentQwen, AgentCursor}
-
-	for _, agent := range agents {
-		cmd := agent.Command()
-		if strings.HasPrefix(rest, cmd+"-") {
-			return agent, true
-		}
-	}
-
+	// Agent information is no longer part of the container name
+	// It should be stored elsewhere (e.g., container labels or state file)
 	return "", false
 }
 
@@ -109,4 +103,3 @@ func ValidateAgent(s string) (Agent, error) {
 func AllAgents() []Agent {
 	return []Agent{AgentClaude, AgentGemini, AgentCodex, AgentQwen, AgentCursor}
 }
-
