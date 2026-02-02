@@ -1,15 +1,15 @@
 class Agentsandbox < Formula
-  desc "Create isolated Ubuntu Docker containers with development agents pre-installed"
-  homepage "https://github.com/your-username/agentsandbox"
-  url "https://github.com/your-username/agentsandbox/archive/refs/tags/v0.1.0.tar.gz"
+  desc "Create isolated Docker containers with AI development agents"
+  homepage "https://github.com/thaodangspace/agentsandbox"
+  url "https://github.com/thaodangspace/agentsandbox/archive/refs/tags/v0.2.0.tar.gz"
   sha256 "YOUR_SHA256_HERE"
-  license "MIT"  # Update this based on your actual license
+  license "MIT"
 
-  depends_on "rust" => :build
+  depends_on "go" => :build
   depends_on "docker"
 
   def install
-    system "cargo", "install", *std_cargo_args
+    system "go", "build", *std_go_args(ldflags: "-s -w"), "./cmd/agentsandbox"
   end
 
   test do
@@ -20,6 +20,7 @@ class Agentsandbox < Formula
     assert_match version.to_s, shell_output("#{bin}/agentsandbox --version")
     
     # Test that it recognizes Docker is not available in test environment
-    assert_match "Docker", shell_output("#{bin}/agentsandbox 2>&1", 1)
+    output = shell_output("#{bin}/agentsandbox 2>&1", 1)
+    assert_match "Docker", output
   end
 end

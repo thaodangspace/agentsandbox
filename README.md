@@ -37,7 +37,7 @@ Using an isolated container provides critical benefits:
 ## Requirements
 
 -   Docker 20.10+ (running and accessible to your user)
--   Rust 1.70+ (only required for building or `cargo install`)
+-   Go 1.21+ (only required for building from source)
 -   Git
 -   Linux, macOS (Intel or Apple Silicon), or Windows via WSL2 + Docker Desktop
 
@@ -56,12 +56,10 @@ brew tap thaodangspace/agentsandbox
 brew install agentsandbox
 ```
 
-### Cargo
+### Go Install
 
 ```bash
-cargo install --path .
-# or, when published:
-cargo install agentsandbox
+go install github.com/thaodangspace/agentsandbox/cmd/agentsandbox@latest
 ```
 
 ### Build from Source
@@ -69,11 +67,10 @@ cargo install agentsandbox
 ```bash
 git clone https://github.com/thaodangspace/agentsandbox.git
 cd agentsandbox
-cargo build --release
-sudo cp target/release/agentsandbox /usr/local/bin/  # optional
+make build
+# or: go build -o bin/agentsandbox ./cmd/agentsandbox
+sudo cp bin/agentsandbox /usr/local/bin/  # optional
 ```
-
-This compiles the Rust CLI and exposes it as the `agentsandbox` command inside npm-based environments.
 
 ### Pre-built Binaries
 
@@ -121,7 +118,7 @@ agentsandbox --shell
 docker exec -it <container-name> /bin/bash
 ```
 
-The container name appears in the startup log (format: `agent-{agent}-{dir}-{branch}-{timestamp}`).
+The container name appears in the startup log (format: `agentsandbox-{project_dir}`).
 
 ## Container Layout
 
@@ -172,18 +169,17 @@ docker rmi agentsandbox-image
     ```
 2. Build and test:
     ```bash
-    cargo build
-    cargo test
-    cargo fmt --all
-    cargo clippy -- -D warnings
+    make build
+    make test
+    make fmt
+    make lint
     ```
-3. Use the helper script for release builds or cross-compilation:
+3. Build for multiple platforms:
     ```bash
-    ./scripts/build.sh            # debug
-    ./scripts/build.sh --release  # optimized
-    ./scripts/build.sh --npm      # produce binaries for npm publish
+    make build-all
+    # or use GoReleaser for full release:
+    goreleaser release --snapshot --clean
     ```
-    Additional targets can be enabled via `rustup target add <triple>` (for example `x86_64-pc-windows-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`).
 4. Push your branch and open a pull request with a clear description, linked issues, and validation steps.
 
 ## Troubleshooting
