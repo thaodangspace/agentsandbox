@@ -60,12 +60,10 @@ RUN curl -fsSL https://claude.ai/install.sh | bash || true
 CMD ["/bin/bash"]
 `
 
-// CreateDockerfile creates a Dockerfile with the specified user info and language toolchains
 func CreateDockerfile(username string, uid, gid int, languages []language.Language) (string, error) {
 	tempDir := os.TempDir()
 	dockerfilePath := filepath.Join(tempDir, "Dockerfile.agentsandbox")
 
-	// Generate language install commands
 	var languageInstalls []string
 	for _, lang := range languages {
 		cmd := lang.DockerfileInstallCmd()
@@ -78,7 +76,6 @@ func CreateDockerfile(username string, uid, gid int, languages []language.Langua
 		languageSection = "# No language toolchains detected"
 	}
 
-	// Generate Dockerfile content
 	content := fmt.Sprintf(dockerfileBaseTemplate, languageSection)
 	content = strings.Replace(content, "ARG USERNAME=ubuntu", fmt.Sprintf("ARG USERNAME=%s", username), 1)
 	content = strings.Replace(content, "ARG USER_UID=1000", fmt.Sprintf("ARG USER_UID=%d", uid), 1)
@@ -91,21 +88,16 @@ func CreateDockerfile(username string, uid, gid int, languages []language.Langua
 	return dockerfilePath, nil
 }
 
-// BuildDockerImage builds the agentsandbox Docker image with detected language toolchains
-// Returns the image name (including tag) for use in container creation
 func BuildDockerImage(username string, languages []language.Language) (string, error) {
-	// Generate image tag based on detected languages
 	tag := language.GenerateImageTag(languages)
 	imageName := fmt.Sprintf("agentsandbox-image:%s", tag)
 
-	// Check if image already exists (cache hit)
 	checkCmd := exec.Command("docker", "image", "inspect", imageName)
 	if err := checkCmd.Run(); err == nil {
 		fmt.Printf("Using cached image: %s\n", imageName)
 		return imageName, nil
 	}
 
-	// Get host UID/GID
 	uidCmd := exec.Command("id", "-u")
 	uidOutput, err := uidCmd.Output()
 	if err != nil {
@@ -121,7 +113,6 @@ func BuildDockerImage(username string, languages []language.Language) (string, e
 	uid := strings.TrimSpace(string(uidOutput))
 	gid := strings.TrimSpace(string(gidOutput))
 
-	// Create Dockerfile with language toolchains
 	dockerfilePath, err := CreateDockerfile(username,
 		parseInt(uid), parseInt(gid), languages)
 	if err != nil {
@@ -158,7 +149,6 @@ func BuildDockerImage(username string, languages []language.Language) (string, e
 	return imageName, nil
 }
 
-// CreateContainer creates and starts a new container
 func CreateContainer(
 	containerName string,
 	currentDir string,
@@ -183,32 +173,27 @@ func CreateContainer(
 		fmt.Printf("Detected languages: %s\n", strings.Join(names, ", "))
 	}
 
-	// Build the image (cached if same languages detected before)
 	imageName, err := BuildDockerImage(username, languages)
 	if err != nil {
 		return err
 	}
 
-	// Prepare docker run command
 	args := []string{
 		"run", "-d", "-it",
 		"--name", containerName,
 		"-v", fmt.Sprintf("%s:%s", currentDir, currentDir),
 	}
 
-	// Handle node_modules isolation for Node.js projects
 	packageJSON := filepath.Join(currentDir, "package.json")
 	if _, err := os.Stat(packageJSON); err == nil {
 		args = append(args, "-v", fmt.Sprintf("%s/node_modules", currentDir))
 		fmt.Println("Isolating node_modules with container volume")
 	}
 
-	// Handle env file overlays
 	settings, _ := config.LoadSettings()
 	for _, envFile := range settings.EnvFiles {
 		envPath := filepath.Join(currentDir, envFile)
 		if _, err := os.Stat(envPath); err == nil {
-			// Create empty temp file to overlay
 			tempFile, err := os.CreateTemp("", "env-overlay-*")
 			if err == nil {
 				tempFile.Close()
@@ -219,17 +204,14 @@ func CreateContainer(
 		}
 	}
 
-	// Additional directory (read-only)
 	if additionalDir != "" {
 		args = append(args, "-v", fmt.Sprintf("%s:%s:ro", additionalDir, additionalDir))
 		fmt.Printf("Mounting additional directory read-only: %s\n", additionalDir)
 	}
 
 
-	// Final args
 	args = append(args, imageName, "/bin/bash")
 
-	// Run container
 	cmd := exec.Command("docker", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -238,14 +220,11 @@ func CreateContainer(
 
 	fmt.Printf("Container %s started successfully!\n", containerName)
 
-	// Copy agent configs from host to container automatically
 	fmt.Println("\nCopying agent configurations from host to container...")
 	if err := CopyAgentConfigsToContainer(containerName, agent); err != nil {
 		fmt.Printf("Warning: failed to copy agent configs: %v\n", err)
-		// Don't fail - this is not critical, configs might already be mounted
 	}
 
-	// Save the command for later
 	agentCmd := BuildAgentCommand(currentDir, agent, false, skipPermissionFlag)
 	if err := state.SaveContainerRunCommand(containerName, []string{agentCmd}); err != nil {
 		fmt.Printf("Warning: failed to save container command: %v\n", err)
@@ -258,7 +237,6 @@ func CreateContainer(
 	return nil
 }
 
-// ResumeContainer resumes an existing container
 func ResumeContainer(
 	containerName string,
 	agent config.Agent,
@@ -298,7 +276,6 @@ func ResumeContainer(
 	return nil
 }
 
-// BuildAgentCommand builds the command to run the agent in the container
 func BuildAgentCommand(currentDir string, agent config.Agent, agentContinue bool, skipPermissionFlag string) string {
 	// Use host path in the container
 	cmd := fmt.Sprintf("cd %s && export PATH=\"$HOME/.cargo/bin:$HOME/.local/bin:$PATH\" && %s",
@@ -315,7 +292,6 @@ func BuildAgentCommand(currentDir string, agent config.Agent, agentContinue bool
 	return cmd
 }
 
-// AttachToContainer attaches to a running container
 func AttachToContainer(
 	containerName string,
 	currentDir string,
@@ -324,7 +300,6 @@ func AttachToContainer(
 	skipPermissionFlag string,
 	shellMode bool,
 ) error {
-	// Get the username to run as (same as host user)
 	username := os.Getenv("USER")
 	if username == "" {
 		username = "ubuntu"
@@ -333,10 +308,8 @@ func AttachToContainer(
 	var cmd *exec.Cmd
 
 	if shellMode {
-		// Just open a shell as the mapped user (login shell for proper environment)
 		cmd = exec.Command("docker", "exec", "-it", "--user", username, "-e", fmt.Sprintf("HOME=/home/%s", username), containerName, "/bin/bash", "-l")
 	} else {
-		// Run the agent as the mapped user (login shell for proper environment)
 		agentCmd := BuildAgentCommand(currentDir, agent, agentContinue, skipPermissionFlag)
 		cmd = exec.Command("docker", "exec", "-it", "--user", username, "-e", fmt.Sprintf("HOME=/home/%s", username), containerName, "/bin/bash", "-l", "-c", agentCmd)
 	}
@@ -349,8 +322,6 @@ func AttachToContainer(
 }
 
 
-// CopyAgentConfigsToContainer copies agent configuration files from host to container
-// This is useful after installing an agent from within the container shell
 func CopyAgentConfigsToContainer(containerName string, agent config.Agent) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -364,17 +335,22 @@ func CopyAgentConfigsToContainer(containerName string, agent config.Agent) error
 
 	fmt.Println("\nCopying agent configurations from host to container...")
 
-	// Determine which configs to copy based on the agent
+	sshDir := filepath.Join(homeDir, ".ssh")
+	if _, err := os.Stat(sshDir); err == nil {
+		containerSSHPath := fmt.Sprintf("/home/%s/.ssh", username)
+		if err := copyConfigToContainer(containerName, sshDir, containerSSHPath, username); err != nil {
+			fmt.Printf("Warning: failed to copy .ssh directory: %v\n", err)
+		}
+	}
+
 	var agentNames []string
 	if agent == config.AgentClaude {
-		// Special handling for Claude
 		claudeConfig := config.GetClaudeConfigDir()
 		if claudeConfig != "" {
 			if err := copyConfigToContainer(containerName, claudeConfig, fmt.Sprintf("/home/%s/.claude", username), username); err != nil {
 				fmt.Printf("Warning: failed to copy Claude config directory: %v\n", err)
 			}
 		}
-		// Check for .claude.json in home directory
 		claudeJSON := filepath.Join(homeDir, ".claude.json")
 		if _, err := os.Stat(claudeJSON); err == nil {
 			if err := copyConfigToContainer(containerName, claudeJSON, fmt.Sprintf("/home/%s/.claude.json", username), username); err != nil {
@@ -383,12 +359,10 @@ func CopyAgentConfigsToContainer(containerName string, agent config.Agent) error
 		}
 		agentNames = []string{"claude"}
 	} else {
-		// Generic agents
 		agentNames = []string{string(agent)}
 	}
 
 	for _, agentName := range agentNames {
-		// Copy config directory
 		configDir := filepath.Join(homeDir, "."+agentName)
 		if _, err := os.Stat(configDir); err == nil {
 			containerPath := fmt.Sprintf("/home/%s/.%s", username, agentName)
@@ -397,7 +371,6 @@ func CopyAgentConfigsToContainer(containerName string, agent config.Agent) error
 			}
 		}
 
-		// Copy config JSON file
 		configJSON := filepath.Join(homeDir, "."+agentName+".json")
 		if _, err := os.Stat(configJSON); err == nil {
 			containerPath := fmt.Sprintf("/home/%s/.%s.json", username, agentName)
@@ -406,11 +379,9 @@ func CopyAgentConfigsToContainer(containerName string, agent config.Agent) error
 			}
 		}
 
-		// Also check .config/{agentName}
 		configPath := filepath.Join(homeDir, ".config", agentName)
 		if _, err := os.Stat(configPath); err == nil {
 			containerPath := fmt.Sprintf("/home/%s/.config/%s", username, agentName)
-			// Create .config directory first
 			mkdirCmd := exec.Command("docker", "exec", containerName, "mkdir", "-p", fmt.Sprintf("/home/%s/.config", username))
 			_ = mkdirCmd.Run()
 
@@ -424,9 +395,7 @@ func CopyAgentConfigsToContainer(containerName string, agent config.Agent) error
 	return nil
 }
 
-// copyConfigToContainer copies a file or directory from host to container using docker cp
 func copyConfigToContainer(containerName, hostPath, containerPath, username string) error {
-	// Get host UID/GID (these match the container user's UID/GID)
 	uidCmd := exec.Command("id", "-u")
 	uidOutput, err := uidCmd.Output()
 	if err != nil {
@@ -441,20 +410,16 @@ func copyConfigToContainer(containerName, hostPath, containerPath, username stri
 	}
 	gid := strings.TrimSpace(string(gidOutput))
 
-	// Check if source is a directory
 	hostInfo, err := os.Stat(hostPath)
 	if err != nil {
 		return fmt.Errorf("failed to stat host path: %w", err)
 	}
 
-	// If source is a directory, remove existing destination in container first
-	// This prevents docker cp from creating nested directories (e.g., .claude/.claude/)
 	if hostInfo.IsDir() {
 		rmCmd := exec.Command("docker", "exec", containerName, "sudo", "rm", "-rf", containerPath)
-		_ = rmCmd.Run() // Ignore error if directory doesn't exist
+		_ = rmCmd.Run()
 	}
 
-	// Copy the file/directory
 	cmd := exec.Command("docker", "cp", hostPath, fmt.Sprintf("%s:%s", containerName, containerPath))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -463,24 +428,37 @@ func copyConfigToContainer(containerName, hostPath, containerPath, username stri
 
 	fmt.Printf("✓ Copied %s to container:%s\n", hostPath, containerPath)
 
-	// Set ownership using UID:GID (username may not exist in container, but UID/GID do)
 	chownCmd := exec.Command("docker", "exec", containerName, "sudo", "chown", "-R", fmt.Sprintf("%s:%s", uid, gid), containerPath)
 	chownOutput, err := chownCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to set ownership: %w\nOutput: %s", err, string(chownOutput))
 	}
 
-	// Set permissions: u+rwX gives user read/write, and execute on directories
-	chmodCmd := exec.Command("docker", "exec", containerName, "sudo", "chmod", "-R", "u+rwX", containerPath)
-	chmodOutput, err := chmodCmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to set permissions: %w\nOutput: %s", err, string(chmodOutput))
+	if filepath.Base(hostPath) == ".ssh" || strings.HasSuffix(containerPath, ".ssh") {
+		chmodDirCmd := exec.Command("docker", "exec", containerName, "sudo", "chmod", "700", containerPath)
+		chmodDirOutput, err := chmodDirCmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to set .ssh directory permissions: %w\nOutput: %s", err, string(chmodDirOutput))
+		}
+
+		chmodFilesCmd := exec.Command("docker", "exec", containerName, "sudo", "find", containerPath, "-type", "f", "-exec", "chmod", "600", "{}", ";")
+		chmodFilesOutput, err := chmodFilesCmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to set .ssh file permissions: %w\nOutput: %s", err, string(chmodFilesOutput))
+		}
+		
+		fmt.Printf("✓ Set strict SSH permissions (700 for directory, 600 for files)\n")
+	} else {
+		chmodCmd := exec.Command("docker", "exec", containerName, "sudo", "chmod", "-R", "u+rwX", containerPath)
+		chmodOutput, err := chmodCmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to set permissions: %w\nOutput: %s", err, string(chmodOutput))
+		}
 	}
 
 	return nil
 }
 
-// parseInt safely converts string to int
 func parseInt(s string) int {
 	var result int
 	fmt.Sscanf(s, "%d", &result)
