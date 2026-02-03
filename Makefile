@@ -7,6 +7,8 @@ BINARY_NAME=agentsandbox
 BUILD_DIR=bin
 
 # Go parameters
+CGO_ENABLED ?= 0
+export CGO_ENABLED
 GOCMD=go
 GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
@@ -124,4 +126,3 @@ help:
 
 # Default target
 .DEFAULT_GOAL := help
-

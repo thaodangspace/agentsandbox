@@ -18,6 +18,7 @@ var (
 	worktree       string
 	shellMode      bool
 	noClipboard    bool
+	ports          []string
 
 	// Root command
 	rootCmd = &cobra.Command{
@@ -37,6 +38,7 @@ func init() {
 	rootCmd.Flags().StringVar(&worktree, "worktree", "", "Create and use a git worktree for the specified branch")
 	rootCmd.Flags().BoolVar(&shellMode, "shell", false, "Attach to container shell without starting the agent")
 	rootCmd.Flags().BoolVar(&noClipboard, "no-clipboard", false, "Disable clipboard image sharing between host and container")
+	rootCmd.Flags().StringSliceVarP(&ports, "port", "p", []string{}, "Publish container port to host (format: HOST_PORT:CONTAINER_PORT, can be specified multiple times)")
 
 	// Add subcommands
 	rootCmd.AddCommand(listCmd)
@@ -118,7 +120,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	fmt.Printf("To attach to the container manually, run: docker exec -it %s /bin/bash\n", containerName)
 
 	// Create and start the container
-	if err := container.CreateContainer(containerName, currentDir, addDir, agent, skipPermissionFlag, shellMode, true); err != nil {
+	if err := container.CreateContainer(containerName, currentDir, addDir, agent, skipPermissionFlag, shellMode, true, ports); err != nil {
 		return fmt.Errorf("failed to create container: %w", err)
 	}
 

@@ -21,7 +21,9 @@ func CheckDockerAvailability() error {
 // CleanupContainers removes all containers created from the current directory
 func CleanupContainers(currentDir string) error {
 	dirName := Sanitize(filepath.Base(currentDir))
-	dirMarker := fmt.Sprintf("-%s-", dirName)
+	if dirName == "" {
+		return nil
+	}
 
 	cmd := exec.Command("docker", "ps", "-a", "--format", "{{.Names}}")
 	output, err := cmd.Output()
@@ -32,12 +34,14 @@ func CleanupContainers(currentDir string) error {
 	names := strings.Split(string(output), "\n")
 	for _, name := range names {
 		name = strings.TrimSpace(name)
-		if strings.HasPrefix(name, "agentsandbox-") && strings.Contains(name, dirMarker) {
-			fmt.Printf("Removing container %s\n", name)
-			rmCmd := exec.Command("docker", "rm", "-f", name)
-			if err := rmCmd.Run(); err != nil {
-				return fmt.Errorf("failed to remove container %s: %w", name, err)
-			}
+		if !isContainerForDir(name, dirName) {
+			continue
+		}
+
+		fmt.Printf("Removing container %s\n", name)
+		rmCmd := exec.Command("docker", "rm", "-f", name)
+		if err := rmCmd.Run(); err != nil {
+			return fmt.Errorf("failed to remove container %s: %w", name, err)
 		}
 	}
 
@@ -47,7 +51,9 @@ func CleanupContainers(currentDir string) error {
 // ListContainers returns a list of containers for the current directory
 func ListContainers(currentDir string) ([]string, error) {
 	dirName := Sanitize(filepath.Base(currentDir))
-	dirMarker := fmt.Sprintf("-%s-", dirName)
+	if dirName == "" {
+		return []string{}, nil
+	}
 
 	cmd := exec.Command("docker", "ps", "-a", "--format", "{{.Names}}")
 	output, err := cmd.Output()
@@ -59,12 +65,29 @@ func ListContainers(currentDir string) ([]string, error) {
 	names := strings.Split(string(output), "\n")
 	for _, name := range names {
 		name = strings.TrimSpace(name)
-		if strings.HasPrefix(name, "agentsandbox-") && strings.Contains(name, dirMarker) {
+		if isContainerForDir(name, dirName) {
 			containers = append(containers, name)
 		}
 	}
 
 	return containers, nil
+}
+
+// isContainerForDir returns true if the container name belongs to the given directory.
+// It supports both the current "agentsandbox-{dir}" format and the legacy
+// format that inserted the directory between dashes ("-dir-").
+func isContainerForDir(name, dirName string) bool {
+	if dirName == "" || !strings.HasPrefix(name, "agentsandbox-") {
+		return false
+	}
+
+	expected := fmt.Sprintf("agentsandbox-%s", dirName)
+	if name == expected || strings.HasPrefix(name, expected+"-") {
+		return true
+	}
+
+	legacyMarker := fmt.Sprintf("-%s-", dirName)
+	return strings.Contains(name, legacyMarker)
 }
 
 // FindExistingContainer finds an existing container for the given directory and agent

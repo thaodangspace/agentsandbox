@@ -2,9 +2,11 @@ package container
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/thaodangspace/agentsandbox/internal/config"
@@ -21,6 +23,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     git \
+		vim \
     build-essential \
     sudo \
     ca-certificates \
@@ -149,6 +152,116 @@ func BuildDockerImage(username string, languages []language.Language) (string, e
 	return imageName, nil
 }
 
+// validatePortMapping validates a port mapping string
+// Accepts formats: PORT, HOST_PORT:CONTAINER_PORT, IP:HOST_PORT:CONTAINER_PORT
+func validatePortMapping(portSpec string) error {
+	if portSpec == "" {
+		return fmt.Errorf("port mapping cannot be empty")
+	}
+
+	// Helper to validate port number is in valid range
+	validatePort := func(portStr string, label string) error {
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return fmt.Errorf("invalid %s port number '%s': %w", label, portStr, err)
+		}
+		if port < 1 || port > 65535 {
+			return fmt.Errorf("%s port %d out of valid range (1-65535)", label, port)
+		}
+		return nil
+	}
+
+	// Try to detect IPv6 by checking for multiple colons
+	// IPv6 addresses contain multiple colons, so we need special handling
+	colonCount := strings.Count(portSpec, ":")
+
+	// IPv6 format: [ipv6]:host:container or just ipv6 (which would have many colons)
+	if strings.HasPrefix(portSpec, "[") {
+		// Format: [IPv6]:host:container
+		closeBracket := strings.Index(portSpec, "]")
+		if closeBracket == -1 {
+			return fmt.Errorf("invalid IPv6 format: missing closing bracket")
+		}
+
+		ipStr := portSpec[1:closeBracket]
+		if net.ParseIP(ipStr) == nil {
+			return fmt.Errorf("invalid IPv6 address '%s'", ipStr)
+		}
+
+		// Parse the port parts after the bracket
+		remainder := portSpec[closeBracket+1:]
+		if !strings.HasPrefix(remainder, ":") {
+			return fmt.Errorf("invalid format: expected colon after IPv6 address")
+		}
+
+		portParts := strings.Split(remainder[1:], ":")
+		if len(portParts) != 2 {
+			return fmt.Errorf("invalid format: expected HOST:CONTAINER after IPv6 address")
+		}
+
+		if err := validatePort(portParts[0], "host"); err != nil {
+			return err
+		}
+		return validatePort(portParts[1], "container")
+	}
+
+	parts := strings.Split(portSpec, ":")
+
+	switch len(parts) {
+	case 1:
+		// Just container port (e.g., "8080")
+		return validatePort(parts[0], "container")
+
+	case 2:
+		// HOST_PORT:CONTAINER_PORT (e.g., "8080:80")
+		if err := validatePort(parts[0], "host"); err != nil {
+			return err
+		}
+		return validatePort(parts[1], "container")
+
+	case 3:
+		// IP:HOST_PORT:CONTAINER_PORT (e.g., "127.0.0.1:8080:80")
+		ip := net.ParseIP(parts[0])
+		if ip == nil {
+			return fmt.Errorf("invalid IP address '%s'", parts[0])
+		}
+		if err := validatePort(parts[1], "host"); err != nil {
+			return err
+		}
+		return validatePort(parts[2], "container")
+
+	default:
+		// More than 3 colons - might be bare IPv6 (not supported by Docker without brackets)
+		if colonCount > 3 {
+			return fmt.Errorf("invalid port mapping format '%s': for IPv6 addresses, use format [IPv6]:HOST:CONTAINER", portSpec)
+		}
+		return fmt.Errorf("invalid port mapping format '%s': expected PORT, HOST:CONTAINER, or IP:HOST:CONTAINER", portSpec)
+	}
+}
+
+// isPortAvailable checks if a port is available on the host
+func isPortAvailable(port string) bool {
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
+	if err != nil {
+		return false
+	}
+	listener.Close()
+	return true
+}
+
+// findAvailablePort finds an available port on the host
+// It tries to find a port by letting the OS assign one
+func findAvailablePort() string {
+	listener, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return ""
+	}
+	defer listener.Close()
+
+	addr := listener.Addr().(*net.TCPAddr)
+	return strconv.Itoa(addr.Port)
+}
+
 func CreateContainer(
 	containerName string,
 	currentDir string,
@@ -157,6 +270,7 @@ func CreateContainer(
 	skipPermissionFlag string,
 	shellMode bool,
 	attach bool,
+	ports []string,
 ) error {
 	username := os.Getenv("USER")
 	if username == "" {
@@ -184,10 +298,13 @@ func CreateContainer(
 		"-v", fmt.Sprintf("%s:%s", currentDir, currentDir),
 	}
 
+	// If package.json exists, create an anonymous volume for node_modules
+	// This excludes the host's node_modules and creates a container-specific one
+	// The volume will be removed when the container is removed
 	packageJSON := filepath.Join(currentDir, "package.json")
 	if _, err := os.Stat(packageJSON); err == nil {
 		args = append(args, "-v", fmt.Sprintf("%s/node_modules", currentDir))
-		fmt.Println("Isolating node_modules with container volume")
+		fmt.Println("Excluding host's node_modules (container will have its own ephemeral node_modules)")
 	}
 
 	settings, _ := config.LoadSettings()
@@ -209,6 +326,40 @@ func CreateContainer(
 		fmt.Printf("Mounting additional directory read-only: %s\n", additionalDir)
 	}
 
+	// Port mapping
+	if len(ports) > 0 {
+		fmt.Println("Exposing ports:")
+		for _, portSpec := range ports {
+			if err := validatePortMapping(portSpec); err != nil {
+				return fmt.Errorf("invalid port mapping '%s': %w", portSpec, err)
+			}
+
+			// If only container port is specified, try to use the same port on host first
+			finalPortSpec := portSpec
+			if !strings.Contains(portSpec, ":") {
+				containerPort := portSpec
+				if isPortAvailable(containerPort) {
+					finalPortSpec = fmt.Sprintf("%s:%s", containerPort, containerPort)
+					fmt.Printf("  %s (using same port on host)\n", finalPortSpec)
+				} else {
+					// Find an available port
+					availablePort := findAvailablePort()
+					if availablePort != "" {
+						finalPortSpec = fmt.Sprintf("%s:%s", availablePort, containerPort)
+						fmt.Printf("  %s (port %s was occupied, using %s instead)\n", finalPortSpec, containerPort, availablePort)
+					} else {
+						// Fall back to Docker's automatic port assignment
+						finalPortSpec = containerPort
+						fmt.Printf("  %s (Docker will assign an available host port)\n", finalPortSpec)
+					}
+				}
+			} else {
+				fmt.Printf("  %s\n", finalPortSpec)
+			}
+
+			args = append(args, "-p", finalPortSpec)
+		}
+	}
 
 	args = append(args, imageName, "/bin/bash")
 
@@ -305,14 +456,32 @@ func AttachToContainer(
 		username = "ubuntu"
 	}
 
-	var cmd *exec.Cmd
+	var args []string
+	args = append(args,
+		"exec",
+		"-it",
+		"--user", username,
+		"-e", fmt.Sprintf("HOME=/home/%s", username),
+	)
+
+	if currentDir != "" {
+		args = append(args, "-w", currentDir)
+	}
+
+	args = append(args, containerName, "/bin/bash", "-l")
 
 	if shellMode {
-		cmd = exec.Command("docker", "exec", "-it", "--user", username, "-e", fmt.Sprintf("HOME=/home/%s", username), containerName, "/bin/bash", "-l")
-	} else {
-		agentCmd := BuildAgentCommand(currentDir, agent, agentContinue, skipPermissionFlag)
-		cmd = exec.Command("docker", "exec", "-it", "--user", username, "-e", fmt.Sprintf("HOME=/home/%s", username), containerName, "/bin/bash", "-l", "-c", agentCmd)
+		cmd := exec.Command("docker", args...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
 	}
+
+	agentCmd := BuildAgentCommand(currentDir, agent, agentContinue, skipPermissionFlag)
+	args = append(args, "-c", agentCmd)
+
+	cmd := exec.Command("docker", args...)
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -320,7 +489,6 @@ func AttachToContainer(
 
 	return cmd.Run()
 }
-
 
 func CopyAgentConfigsToContainer(containerName string, agent config.Agent) error {
 	homeDir, err := os.UserHomeDir()
@@ -446,7 +614,7 @@ func copyConfigToContainer(containerName, hostPath, containerPath, username stri
 		if err != nil {
 			return fmt.Errorf("failed to set .ssh file permissions: %w\nOutput: %s", err, string(chmodFilesOutput))
 		}
-		
+
 		fmt.Printf("✓ Set strict SSH permissions (700 for directory, 600 for files)\n")
 	} else {
 		chmodCmd := exec.Command("docker", "exec", containerName, "sudo", "chmod", "-R", "u+rwX", containerPath)
