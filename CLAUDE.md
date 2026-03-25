@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-agentsandbox (Agent Sandbox) is a Rust CLI tool that creates isolated Ubuntu Docker containers with development agents pre-installed for development work. The tool automatically handles Docker container lifecycle, mounts the current directory as a workspace, and transfers configuration for seamless development.
+agentsandbox (Agent Sandbox) is a Go CLI tool that creates isolated Ubuntu Docker containers with development agents pre-installed for development work. The tool automatically handles Docker container lifecycle, mounts the current directory as a workspace, and transfers configuration for seamless development.
 
 ## Build and Development Commands
 
@@ -12,70 +12,93 @@ agentsandbox (Agent Sandbox) is a Rust CLI tool that creates isolated Ubuntu Doc
 
 ```bash
 # Build in debug mode
-cargo build
+go build -o agentsandbox ./cmd/agentsandbox
 
 # Build optimized release version
-cargo build --release
+go build -ldflags="-s -w" -o agentsandbox ./cmd/agentsandbox
 
-# Install locally using cargo
-cargo install --path .
+# Install locally using go
+go install ./cmd/agentsandbox
 
-# Install to system (requires release build first)
-sudo cp target/release/agentsandbox /usr/local/bin/
+# Install to system
+sudo cp $(go env GOPATH)/bin/agentsandbox /usr/local/bin/
 ```
 
 ### Testing and Development
 
 ```bash
 # Run the tool
-cargo run
+go run ./cmd/agentsandbox
 
-# Run with the continue flag
-cargo run -- --continue
+# Run with flags
+go run ./cmd/agentsandbox --continue
+go run ./cmd/agentsandbox --agent gemini
+go run ./cmd/agentsandbox --shell
+
+# Run tests
+go test ./...
+
+# Run tests with verbose output
+go test -v ./...
 
 # Check code formatting
-cargo fmt --check
+go fmt ./...
 
-# Run clippy for linting
-cargo clippy
+# Run vet for static analysis
+go vet ./...
 
-# Run any tests
-cargo test
+# Install dependencies
+go mod tidy
 ```
 
 ## Architecture Overview
 
 The codebase is structured into focused modules:
 
--   **`main.rs`**: Entry point handling command-line parsing, Docker availability checks, clipboard watcher management, and orchestrating container creation or resumption
--   **`cli.rs`**: Command-line interface definition using clap with support for resuming previous containers via `--continue` flag and disabling clipboard with `--no-clipboard`
--   **`clipboard.rs`**: Clipboard directory management, watcher PID tracking, and process monitoring for image sharing between host and containers
--   **`config.rs`**: Claude configuration discovery and management, handling multiple config locations (.claude directory, XDG, local .claude.json files)
--   **`container.rs`**: Core Docker operations including container creation, lifecycle management, and dynamic Dockerfile generation
--   **`state.rs`**: Persistent state management for tracking the last created container in `~/.config/agentsandbox/last_container`
+- **`cmd/agentsandbox/main.go`**: Entry point that calls the CLI package
+- **`internal/cli/`**: Command-line interface using cobra
+  - `root.go`: Root command and default action (start container)
+  - `start.go`: Start subcommand (alias for default behavior)
+  - `attach.go`: Attach to running container
+  - `cleanup.go`: Remove old containers
+  - `copy_config.go`: Copy agent configs to container
+  - `list.go`: List containers
+  - `logs.go`: View container logs
+- **`internal/config/`**: Configuration management
+  - `agent.go`: Agent types (Claude, Gemini, Codex, Qwen, Cursor)
+  - `settings.go`: Settings file handling
+- **`internal/container/`**: Core Docker operations
+  - `runtime.go`: Dockerfile generation, container creation, attach
+  - `manager.go`: Container lifecycle management
+  - `naming.go`: Container naming conventions
+- **`internal/clipboard/`**: Clipboard image sharing (X11 only)
+- **`internal/state/`**: Persistent state for last container tracking
+- **`internal/language/`**: Language detection and toolchain installation
+- **`internal/git/`**: Git worktree management
+- **`internal/logs/`**: Log parsing and viewing
 
 ### Key Design Patterns
 
-1. **Configuration Discovery**: The tool searches multiple standard locations for Claude configs and automatically mounts them into containers
-2. **Container Lifecycle**: Supports both creating new containers and resuming existing ones with state tracking
-3. **Dynamic Dockerfile**: Generates Ubuntu 22.04-based containers with comprehensive development tools (Node.js, Go, Rust, Python, build tools)
+1. **Configuration Discovery**: Searches multiple standard locations for agent configs and mounts them into containers
+2. **Container Lifecycle**: Supports creating new containers and resuming existing ones with state tracking
+3. **Dynamic Dockerfile**: Generates Ubuntu 22.04-based containers with AI agents and development tools
 4. **User Context Preservation**: Maintains user identity and sudo privileges within containers
 
 ### Dependencies and External Tools
 
--   **Docker**: Required for container operations - tool validates availability before proceeding
--   **Claude Code**: Automatically installed via npm in containers and can be launched with agent-specific permission-skipping flags (e.g., `--dangerously-skip-permissions`, `--yolo`) configured in `settings.json`
--   **Development Tools**: Containers include Node.js v22, Go 1.24.5, Rust/Cargo, Python3, and build-essential
+- **Docker**: Required for container operations - tool validates availability before proceeding
+- **AI Agents**: Claude Code, Gemini CLI, Codex, Qwen, Cursor - installed via their respective install scripts in containers
+- **Development Tools**: Containers include Node.js v22, Go, Rust/Cargo, Python3, and build-essential based on detected project languages
 
 ### Container Environment
 
 Containers are created with:
 
--   Base: Ubuntu 22.04
--   Working directory: `/workspace` (mounted from current directory)
--   User: Matches host user with sudo privileges
--   Claude configs: Auto-mounted from `~/.claude`, XDG locations, or local `.claude.json`
--   Development tools: Pre-installed and added to PATH via `.bashrc`
+- Base: Ubuntu 22.04
+- Working directory: `/workspace` (mounted from current directory)
+- User: Matches host user with sudo privileges
+- Agent configs: Auto-mounted from `~/.claude`, `~/.gemini`, etc., XDG locations, or local `.json` files
+- AI agents: Installed to user's `~/.local/bin` during Docker build
 
 ## Clipboard Image Sharing
 
@@ -135,3 +158,15 @@ While the integration is disabled this flag is redundant but left in place for f
 ## Container Management
 
 The tool generates container names using the format `agentsandbox-{project_dir}` and tracks the last container for resumption. State is persisted in `~/.config/agentsandbox/last_container`.
+
+## Command-Line Flags
+
+```bash
+--agent <name>       Agent to start (claude, gemini, codex, qwen, cursor)
+--continue           Resume the last created container
+--add-dir <path>     Additional directory to mount read-only
+--worktree <branch>  Create and use a git worktree for the specified branch
+--shell              Attach to container shell without starting the agent
+--no-clipboard       Disable clipboard image sharing
+-p, --port <spec>    Publish container port (HOST:CONTAINER format)
+```

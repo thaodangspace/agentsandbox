@@ -57,8 +57,8 @@ WORKDIR /home/$USERNAME
 # Add Go to PATH if installed
 ENV PATH="/usr/local/go/bin:${PATH}"
 
-# Install Claude (example - adjust per actual installation method)
-RUN curl -fsSL https://claude.ai/install.sh | bash || true
+# Install Claude as non-root user (goes to ~/.local/bin)
+RUN curl -fsSL https://claude.ai/install.sh | bash
 
 CMD ["/bin/bash"]
 `
