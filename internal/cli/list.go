@@ -177,4 +177,3 @@ func runListAll(cmd *cobra.Command, args []string) error {
 
 	return container.ResumeContainer(selected.Name, agent, false, skipPermissionFlag, shellMode, true)
 }
-

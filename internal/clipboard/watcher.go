@@ -285,4 +285,3 @@ func StartWatcher() error {
 
 	return nil
 }
-

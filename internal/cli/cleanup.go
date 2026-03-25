@@ -32,4 +32,3 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Removed all Agent Sandbox containers for directory %s\n", currentDir)
 	return nil
 }
-

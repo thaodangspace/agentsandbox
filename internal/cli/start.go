@@ -9,4 +9,3 @@ var startCmd = &cobra.Command{
 	Short: "Start a new agent sandbox container (alias for default behavior)",
 	RunE:  runStart,
 }
-

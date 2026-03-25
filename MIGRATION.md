@@ -30,8 +30,6 @@ AgentSandbox has been completely rewritten from Rust to Go (version 0.2.0), prov
 | `src/state.rs` | `internal/state/` | State management |
 | `src/language.rs` | `internal/language/` | Language detection |
 | `src/clipboard.rs` + shell scripts | `internal/clipboard/` | Clipboard watcher in native Go |
-| `src/log_parser.rs` | `internal/logs/` | Log parsing and HTML generation |
-| `src/worktree.rs` | `internal/git/` | Git worktree operations |
 
 ### Dependencies
 
@@ -63,7 +61,6 @@ None - the CLI interface remains compatible. All commands and flags work the sam
 - `agentsandbox --agent qwen` - Start specific agent
 - `agentsandbox list` (or `ls`) - List containers
 - `agentsandbox cleanup` - Remove containers
-- `agentsandbox logs list` - Manage logs
 
 ## Installation (New)
 
@@ -115,9 +112,7 @@ agentsandbox/
 │   ├── config/           # Configuration
 │   ├── language/         # Language detection
 │   ├── clipboard/        # Clipboard watcher
-│   ├── logs/             # Log parsing
-│   ├── state/            # State management
-│   └── git/              # Git operations
+│   └── state/            # State management
 ├── Makefile              # Build automation
 ├── go.mod                # Go dependencies
 └── .goreleaser.yaml      # Release configuration

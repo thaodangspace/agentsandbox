@@ -41,4 +41,3 @@ func runAttach(cmd *cobra.Command, args []string) error {
 
 	return container.ResumeContainer(containerName, agent, false, skipPermissionFlag, shellMode, true)
 }
-

@@ -7,18 +7,16 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/thaodangspace/agentsandbox/internal/config"
 	"github.com/thaodangspace/agentsandbox/internal/container"
-	"github.com/thaodangspace/agentsandbox/internal/git"
 )
 
 var (
 	// Global flags
-	agentName      string
-	continueFlag   bool
-	addDir         string
-	worktree       string
-	shellMode      bool
-	noClipboard    bool
-	ports          []string
+	agentName    string
+	continueFlag bool
+	addDir       string
+	shellMode    bool
+	noClipboard  bool
+	ports        []string
 
 	// Root command
 	rootCmd = &cobra.Command{
@@ -35,7 +33,6 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&agentName, "agent", "claude", "Agent to start in the container (claude, gemini, codex, qwen, cursor)")
 	rootCmd.Flags().BoolVar(&continueFlag, "continue", false, "Resume the last created container")
 	rootCmd.Flags().StringVar(&addDir, "add-dir", "", "Additional directory to mount read-only inside the container")
-	rootCmd.Flags().StringVar(&worktree, "worktree", "", "Create and use a git worktree for the specified branch")
 	rootCmd.Flags().BoolVar(&shellMode, "shell", false, "Attach to container shell without starting the agent")
 	rootCmd.Flags().BoolVar(&noClipboard, "no-clipboard", false, "Disable clipboard image sharing between host and container")
 	rootCmd.Flags().StringSliceVarP(&ports, "port", "p", []string{}, "Publish container port to host (format: HOST_PORT:CONTAINER_PORT, can be specified multiple times)")
@@ -44,7 +41,6 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(listAllCmd)
 	rootCmd.AddCommand(cleanupCmd)
-	rootCmd.AddCommand(logsCmd)
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(attachCmd)
 }
@@ -66,18 +62,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 	currentDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
-	}
-
-	// Handle worktree
-	if worktree != "" {
-		worktreePath, err := git.CreateWorktree(currentDir, worktree)
-		if err != nil {
-			return fmt.Errorf("failed to create worktree for branch %s: %w", worktree, err)
-		}
-		currentDir = worktreePath
-		if err := os.Chdir(currentDir); err != nil {
-			return fmt.Errorf("failed to change directory to worktree: %w", err)
-		}
 	}
 
 	// Load settings
@@ -145,4 +129,3 @@ func handleContinue(agent config.Agent, skipPermissionFlag string) error {
 
 	return container.ResumeContainer(containerName, agent, true, skipPermissionFlag, shellMode, true)
 }
-

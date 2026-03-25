@@ -63,7 +63,6 @@ The codebase is structured into focused modules:
   - `cleanup.go`: Remove old containers
   - `copy_config.go`: Copy agent configs to container
   - `list.go`: List containers
-  - `logs.go`: View container logs
 - **`internal/config/`**: Configuration management
   - `agent.go`: Agent types (Claude, Gemini, Codex, Qwen, Cursor)
   - `settings.go`: Settings file handling
@@ -74,8 +73,6 @@ The codebase is structured into focused modules:
 - **`internal/clipboard/`**: Clipboard image sharing (X11 only)
 - **`internal/state/`**: Persistent state for last container tracking
 - **`internal/language/`**: Language detection and toolchain installation
-- **`internal/git/`**: Git worktree management
-- **`internal/logs/`**: Log parsing and viewing
 
 ### Key Design Patterns
 
@@ -165,7 +162,6 @@ The tool generates container names using the format `agentsandbox-{project_dir}`
 --agent <name>       Agent to start (claude, gemini, codex, qwen, cursor)
 --continue           Resume the last created container
 --add-dir <path>     Additional directory to mount read-only
---worktree <branch>  Create and use a git worktree for the specified branch
 --shell              Attach to container shell without starting the agent
 --no-clipboard       Disable clipboard image sharing
 -p, --port <spec>    Publish container port (HOST:CONTAINER format)

@@ -25,8 +25,7 @@ Using an isolated container provides critical benefits:
 ## Highlights
 
 -   **Multi-Agent Support**: Compatible with Claude, Gemini, Codex, Qwen, and Cursor development agents
--   **Automatic Workspace Mounting**: Seamlessly mounts your current directory to same path with the host machine in the container
--   **Node Modules Isolation**: For Node.js projects, `node_modules` is overlaid with a container-only volume. Existing host `node_modules` are copied to the container on first run to accelerate setup.
+-   **Automatic Workspace Mounting**: Seamlessly mounts your current directory to same path with the host machine in the container, including `node_modules` so agents can run npm scripts immediately
 -   **Configuration Management**: Automatically copies and applies your agent configurations
 -   **Language Tooling**: Detects common project languages and installs missing package managers like Cargo, npm, pip, Composer, Go, or Bundler
 
@@ -187,7 +186,6 @@ docker rmi agentsandbox-image
 -   **Docker not found**: confirm Docker Desktop/daemon is running and you are in the `docker` group.
 -   **Permission errors**: re-log after adding yourself to the `docker` group or run with elevated privileges.
 -   **Agent fails to launch**: use `docker exec -it <container-name> <agent>` to inspect the container and logs.
--   **Slow startup**: first run may copy dependencies like `node_modules`; subsequent runs reuse the cached overlay volume.
 
 ## License
 

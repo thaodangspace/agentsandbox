@@ -298,15 +298,6 @@ func CreateContainer(
 		"-v", fmt.Sprintf("%s:%s", currentDir, currentDir),
 	}
 
-	// If package.json exists, create an anonymous volume for node_modules
-	// This excludes the host's node_modules and creates a container-specific one
-	// The volume will be removed when the container is removed
-	packageJSON := filepath.Join(currentDir, "package.json")
-	if _, err := os.Stat(packageJSON); err == nil {
-		args = append(args, "-v", fmt.Sprintf("%s/node_modules", currentDir))
-		fmt.Println("Excluding host's node_modules (container will have its own ephemeral node_modules)")
-	}
-
 	settings, _ := config.LoadSettings()
 	for _, envFile := range settings.EnvFiles {
 		envPath := filepath.Join(currentDir, envFile)

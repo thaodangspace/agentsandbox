@@ -10,8 +10,8 @@ import (
 
 // Settings represents the application settings
 type Settings struct {
-	SkipPermissionFlags  map[string]string `json:"skip_permission_flags" mapstructure:"skip_permission_flags"`
-	EnvFiles             []string          `json:"env_files" mapstructure:"env_files"`
+	SkipPermissionFlags map[string]string `json:"skip_permission_flags" mapstructure:"skip_permission_flags"`
+	EnvFiles            []string          `json:"env_files" mapstructure:"env_files"`
 }
 
 // DefaultSettings returns the default settings
@@ -145,4 +145,3 @@ func SetupViper() error {
 
 	return nil
 }
-
